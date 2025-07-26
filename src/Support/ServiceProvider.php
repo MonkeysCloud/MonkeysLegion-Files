@@ -24,84 +24,96 @@ final class ServiceProvider
         $maxBytes    = $mlc->get('files.max_bytes', 20 * 1024 * 1024);
         $mimeAllow   = $mlc->get('files.mime_allow', []);
 
-        // 1) Bind FileNamer
+        // 1) FileNamer
         $container->set(FileNamer::class, fn() => new HashPathNamer());
 
-        // 2) Bind concrete drivers so you can type-hint them directly
+        // 2) FileStorage via factory methods
+        $container->set(FileStorage::class, function() use ($defaultDisk, $disks) {
+            if (! isset($disks[$defaultDisk])) {
+                throw new \RuntimeException("Disk '{$defaultDisk}' not configured");
+            }
 
-        if (isset($disks['local'])) {
-            $cfg = $disks['local'];
-            $container->set(LocalStorage::class, fn() => new LocalStorage(
-                root: $cfg['root'],
-                publicBaseUrl: $cfg['public_base_url'] ?? null,
-            ));
-        }
-
-        if (isset($disks['s3'])) {
-            $cfg = $disks['s3'];
-            $container->set(S3Storage::class, function() use ($cfg) {
-                if (! class_exists(S3Client::class)) {
-                    throw new \RuntimeException('aws/aws-sdk-php is required for S3');
-                }
-                $s3 = new S3Client([
-                    'version' => 'latest',
-                    'region'  => $cfg['region'] ?? 'us-east-1',
-                ]);
-                return new S3Storage(
-                    $s3,
-                    $cfg['bucket'],
-                    $cfg['prefix']          ?? '',
-                    $cfg['public_base_url'] ?? null
-                );
-            });
-        }
-
-        if (isset($disks['gcs'])) {
-            $cfg = $disks['gcs'];
-
-            $container->set(GcsStorage::class, function() use ($cfg) {
-                if (! class_exists(StorageClient::class)) {
-                    throw new \RuntimeException('google/cloud-storage is required for GCS');
-                }
-
-                $clientConfig = [];
-                if (! empty($cfg['key_file_path'])) {
-                    $clientConfig['keyFilePath'] = $cfg['key_file_path'];
-                }
-                if (! empty($cfg['project_id'])) {
-                    $clientConfig['projectId'] = $cfg['project_id'];
-                }
-
-                // Create the client into $gcsClient (or rename consistently)
-                $gcsClient = new StorageClient($clientConfig);
-
-                return new GcsStorage(
-                    $gcsClient,
-                    $cfg['bucket'],
-                    $cfg['prefix']          ?? '',
-                    $cfg['public_base_url'] ?? null
-                );
-            });
-        }
-
-        // 3) Bind the FileStorage interface
-        $container->set(FileStorage::class, function($c) use ($defaultDisk, $disks) {
             return match ($defaultDisk) {
-                'local' => $c->get(LocalStorage::class),
-                's3'    => $c->get(S3Storage::class),
-                'gcs'   => $c->get(GcsStorage::class),
+                'local' => $this->makeLocal($disks['local']),
+                's3'    => $this->makeS3($disks['s3']),
+                'gcs'   => $this->makeGcs($disks['gcs']),
                 default => throw new \RuntimeException("Unsupported disk '{$defaultDisk}'"),
             };
         });
 
-        // 4) Bind the UploadManager
+        // 3) UploadManager
         $container->set(UploadManager::class, function($c) use ($maxBytes, $mimeAllow) {
             return new UploadManager(
-                storage:   $c->get(FileStorage::class),
-                namer:     $c->get(FileNamer::class),
-                maxBytes:  (int)   $maxBytes,
-                mimeAllow: (array) $mimeAllow,
+                $c->get(FileStorage::class),
+                $c->get(FileNamer::class),
+                (int)   $maxBytes,
+                (array) $mimeAllow
             );
         });
+    }
+
+    private function makeLocal(array $cfg): FileStorage
+    {
+        $root      = $cfg['root'];
+        $publicUrl = rtrim($cfg['public_base_url'] ?? '', '/');
+
+        // Ensure storage root
+        if (! is_dir($root)) {
+            mkdir($root, 0755, true);
+        }
+
+        // Ensure public folder under project/public/{fragment}
+        if ($publicUrl !== '' && ! preg_match('#^https?://#i', $publicUrl)) {
+            $fragment  = ltrim($publicUrl, '/');
+            $publicDir = dirname(__DIR__, 2) . '/public/' . $fragment;
+            if (! is_dir($publicDir)) {
+                mkdir($publicDir, 0755, true);
+            }
+        }
+
+        return new LocalStorage($root, $publicUrl);
+    }
+
+    private function makeS3(array $cfg): FileStorage
+    {
+        if (! class_exists(S3Client::class)) {
+            throw new \RuntimeException('aws/aws-sdk-php is required for S3');
+        }
+
+        $s3 = new S3Client([
+            'version' => 'latest',
+            'region'  => $cfg['region'] ?? 'us-east-1',
+        ]);
+
+        return new S3Storage(
+            $s3,
+            $cfg['bucket'],
+            $cfg['prefix']          ?? '',
+            $cfg['public_base_url'] ?? null
+        );
+    }
+
+    private function makeGcs(array $cfg): FileStorage
+    {
+        if (! class_exists(StorageClient::class)) {
+            throw new \RuntimeException('google/cloud-storage is required for GCS');
+        }
+
+        $clientConfig = [];
+        if (! empty($cfg['key_file_path'])) {
+            $clientConfig['keyFilePath'] = $cfg['key_file_path'];
+        }
+        if (! empty($cfg['project_id'])) {
+            $clientConfig['projectId'] = $cfg['project_id'];
+        }
+
+        $gcsClient = new StorageClient($clientConfig);
+
+        return new GcsStorage(
+            $gcsClient,
+            $cfg['bucket'],
+            $cfg['prefix']          ?? '',
+            $cfg['public_base_url'] ?? null
+        );
     }
 }
