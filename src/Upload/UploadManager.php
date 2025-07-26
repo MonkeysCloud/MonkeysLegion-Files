@@ -17,7 +17,7 @@ final class UploadManager
 
     /**
      * @param string[]      $mimeAllow
-     * @param callable|null $onAfterSave
+     * @param callable|null $onAfterSave Optional hook; receives FileMeta after save.
      */
     public function __construct(
         private FileStorage $storage,
@@ -40,16 +40,15 @@ final class UploadManager
         }
 
         $entry = $files[$field];
-        if (is_array($entry)) {
-            if (count($entry) === 0) {
-                throw new \RuntimeException("No files in field '{$field}'.");
-            }
-            $file = $entry[0];
-        } else {
+        // PSR-7 may return either an UploadedFileInterface or an array of them
+        if ($entry instanceof UploadedFileInterface) {
             $file = $entry;
-        }
-
-        if (! $file instanceof UploadedFileInterface) {
+        } elseif (is_array($entry)) {
+            $file = reset($entry);
+            if (! $file instanceof UploadedFileInterface) {
+                throw new \RuntimeException("Invalid upload for field '{$field}'.");
+            }
+        } else {
             throw new \RuntimeException("Invalid upload for field '{$field}'.");
         }
 
