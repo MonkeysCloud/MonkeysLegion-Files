@@ -8,6 +8,7 @@ use MonkeysLegion\Files\Contracts\FileStorage;
 use MonkeysLegion\Files\DTO\FileMeta;
 use MonkeysLegion\Files\Validation\UploadRules;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Psr\Http\Message\UploadedFileInterface;
 
 final class UploadManager
 {
@@ -15,8 +16,8 @@ final class UploadManager
     private $onAfterSave;
 
     /**
-     * @param string[]         $mimeAllow
-     * @param callable|null    $onAfterSave  Optional hook; receives FileMeta after save.
+     * @param string[]      $mimeAllow
+     * @param callable|null $onAfterSave
      */
     public function __construct(
         private FileStorage $storage,
@@ -38,7 +39,20 @@ final class UploadManager
             throw new \RuntimeException("No file in field '{$field}'.");
         }
 
-        $file = $files[$field];
+        $entry = $files[$field];
+        if (is_array($entry)) {
+            if (count($entry) === 0) {
+                throw new \RuntimeException("No files in field '{$field}'.");
+            }
+            $file = $entry[0];
+        } else {
+            $file = $entry;
+        }
+
+        if (! $file instanceof UploadedFileInterface) {
+            throw new \RuntimeException("Invalid upload for field '{$field}'.");
+        }
+
         UploadRules::validate($file, $this->maxBytes, $this->mimeAllow);
 
         $in = $file->getStream();
