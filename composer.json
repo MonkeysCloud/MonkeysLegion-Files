@@ -41,7 +41,10 @@
     "monkeyslegion": {
       "providers": [
         "MonkeysLegion\\Files\\Support\\ServiceProvider"
-      ]
+      ],
+      "config": {
+        "files": "config/files.mlc"
+      }
     }
   }
 }
