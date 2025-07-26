@@ -8,7 +8,7 @@ use MonkeysLegion\Files\Contracts\FileStorage;
 use MonkeysLegion\Files\Storage\LocalStorage;
 use MonkeysLegion\Files\Storage\S3Storage;
 use MonkeysLegion\Files\Storage\GcsStorage;
-use MonkeysLegion\Files\Upload\HashPathNamer;
+use MonkeysLegion\Files\Upload\UniquePathNamer;
 use MonkeysLegion\Files\Upload\UploadManager;
 use Aws\S3\S3Client;
 use Google\Cloud\Storage\StorageClient;
@@ -27,7 +27,7 @@ final class ServiceProvider
     public function register(ContainerBuilder $builder): void
     {
         $builder->addDefinitions([
-            FileNamer::class => fn() => new HashPathNamer(),
+            FileNamer::class => fn() => new UniquePathNamer(),
 
             FileStorage::class => function ($c) {
                 /** @var MlcConfig $mlc */
