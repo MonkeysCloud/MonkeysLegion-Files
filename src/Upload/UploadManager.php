@@ -11,6 +11,11 @@ use MonkeysLegion\Files\Validation\UploadRules;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Message\UploadedFileInterface;
 
+/**
+ * Handles file uploads, validates them, and saves them to the configured storage.
+ *
+ * @see FileMeta
+ */
 final class UploadManager
 {
     /** @var callable|null */
@@ -33,6 +38,14 @@ final class UploadManager
         $this->onAfterSave = $onAfterSave;
     }
 
+    /**
+     * Handle the file upload from the request.
+     *
+     * @param Request $request The incoming request containing the uploaded file.
+     * @param string  $field   The field name where the file is expected (default: 'file').
+     * @return FileMeta The metadata of the uploaded file.
+     * @throws \RuntimeException If no file is found or validation fails.
+     */
     public function handle(Request $request, string $field = 'file'): FileMeta
     {
         $files = $request->getUploadedFiles();

@@ -25,11 +25,24 @@ final class GcsStorage implements FileStorage
         private ?string $publicBaseUrl = null, // e.g. https://cdn.example.com
     ) {}
 
+    /**
+     * Returns the name of this storage driver.
+     *
+     * This is used by the Files service to identify the driver type.
+     */
     public function name(): string
     {
         return 'gcs';
     }
 
+    /**
+     * Uploads a file to Google Cloud Storage.
+     *
+     * @param string $path The path where the file should be stored.
+     * @param StreamInterface $stream The file content as a stream.
+     * @param array $options Additional options for the upload, e.g. 'mime' or 'predefinedAcl'.
+     * @return string|null Returns the public URL if configured, otherwise null.
+     */
     public function put(string $path, StreamInterface $stream, array $options = []): ?string
     {
         $key = $this->key($path);
@@ -65,6 +78,12 @@ final class GcsStorage implements FileStorage
         return null;
     }
 
+    /**
+     * Deletes a file from Google Cloud Storage.
+     *
+     * @param string $path The path of the file to delete.
+     * @return void
+     */
     public function delete(string $path): void
     {
         $object = $this->client->bucket($this->bucket)->object($this->key($path));
@@ -76,6 +95,12 @@ final class GcsStorage implements FileStorage
         }
     }
 
+    /**
+     * Reads a file from Google Cloud Storage.
+     *
+     * @param string $path The path of the file to read.
+     * @return StreamInterface Returns a PSR-7 stream containing the file content.
+     */
     public function read(string $path): StreamInterface
     {
         $object = $this->client->bucket($this->bucket)->object($this->key($path));
@@ -88,6 +113,12 @@ final class GcsStorage implements FileStorage
         return Psr7::streamFor($contents);
     }
 
+    /**
+     * Checks if a file exists in Google Cloud Storage.
+     *
+     * @param string $path The path of the file to check.
+     * @return bool Returns true if the file exists, false otherwise.
+     */
     public function exists(string $path): bool
     {
         $object = $this->client->bucket($this->bucket)->object($this->key($path));
@@ -98,7 +129,12 @@ final class GcsStorage implements FileStorage
         }
     }
 
-    /** Optional helper used by ml_files_url() if present. */
+    /**
+     * Generates a public URL for a file in Google Cloud Storage.
+     *
+     * @param string $path The path of the file to generate the URL for.
+     * @return string Returns the public URL if configured, otherwise the GCS default URL.
+     */
     public function publicUrl(string $path): string
     {
         $key = $this->key($path);
@@ -110,6 +146,14 @@ final class GcsStorage implements FileStorage
         return sprintf('https://storage.googleapis.com/%s/%s', $this->bucket, $key);
     }
 
+    /**
+     * Generates the full key for a file in Google Cloud Storage.
+     *
+     * This includes the prefix if set, ensuring the key is properly formatted.
+     *
+     * @param string $path The path of the file.
+     * @return string Returns the full key for the file.
+     */
     private function key(string $path): string
     {
         $key = ltrim($path, '/');

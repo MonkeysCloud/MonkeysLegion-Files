@@ -7,7 +7,9 @@ use GuzzleHttp\Psr7\Utils as Psr7;
 use MonkeysLegion\Files\Contracts\FileStorage;
 use Psr\Http\Message\StreamInterface;
 
-/** Optional driver, requires aws/aws-sdk-php */
+/**
+ * S3 file storage implementation.
+ */
 final class S3Storage implements FileStorage
 {
     public function __construct(
@@ -17,8 +19,18 @@ final class S3Storage implements FileStorage
         private ?string $publicBaseUrl = null,
     ) {}
 
+    /** Returns the name of this storage implementation. */
     public function name(): string { return 's3'; }
 
+    /**
+     * Store the given stream at the specified path in S3.
+     * Creates the object with the specified content type and returns a public URL if configured.
+     *
+     * @param string $path The relative path where the file should be stored.
+     * @param StreamInterface $stream The stream containing the file data.
+     * @param array $options Additional options (e.g., 'mime' for content type).
+     * @return string|null The public URL of the stored file, or null if not public.
+     */
     public function put(string $path, StreamInterface $stream, array $options = []): ?string
     {
         $key = ltrim($this->prefix.$path, '/');
@@ -31,12 +43,25 @@ final class S3Storage implements FileStorage
         return $this->publicBaseUrl ? rtrim($this->publicBaseUrl,'/').'/'.$key : null;
     }
 
+    /**
+     * Delete the file at the specified path in S3.
+     * If the object exists, it will be removed from the bucket.
+     *
+     * @param string $path The relative path of the file to delete.
+     */
     public function delete(string $path): void
     {
         $key = ltrim($this->prefix.$path, '/');
         $this->s3->deleteObject(['Bucket' => $this->bucket, 'Key' => $key]);
     }
 
+    /**
+     * Read the file at the specified path in S3 and return it as a stream.
+     * If the object does not exist, an exception will be thrown.
+     *
+     * @param string $path The relative path of the file to read.
+     * @return StreamInterface The stream containing the file data.
+     */
     public function read(string $path): StreamInterface
     {
         $key = ltrim($this->prefix.$path, '/');
@@ -44,6 +69,13 @@ final class S3Storage implements FileStorage
         return Psr7::streamFor($res['Body']);
     }
 
+    /**
+     * Check if a file exists at the specified path in S3.
+     * Returns true if the object exists, false otherwise.
+     *
+     * @param string $path The relative path of the file to check.
+     * @return bool True if the file exists, false otherwise.
+     */
     public function exists(string $path): bool
     {
         $key = ltrim($this->prefix.$path, '/');
