@@ -95,6 +95,11 @@ final class UploadManager
         $name = $file->getClientFilename() ?: 'file';
         $path = $this->namer->path($name, $mime, $sha256);
 
+        // Defensive: if path already exists, generate a new one a few times
+        for ($i = 0; $i < 3 && $this->storage->exists($path); $i++) {
+            $path = $this->namer->path($name, $mime, $sha256);
+        }
+
         $url = $this->storage->put($path, Psr7::streamFor($tmp), ['mime' => $mime]);
 
         $meta = new FileMeta(
