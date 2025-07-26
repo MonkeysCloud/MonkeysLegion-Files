@@ -1,7 +1,8 @@
 <?php
 namespace MonkeysLegion\Files\Support;
 
-use MonkeysLegion\Mlc\Config;
+use MonkeysLegion\DI\ContainerBuilder;
+use MonkeysLegion\Mlc\Config as MlcConfig;
 use MonkeysLegion\Files\Contracts\FileNamer;
 use MonkeysLegion\Files\Contracts\FileStorage;
 use MonkeysLegion\Files\Storage\LocalStorage;
@@ -14,42 +15,55 @@ use Google\Cloud\Storage\StorageClient;
 
 final class ServiceProvider
 {
-    public function register($container): void
+    public function register(ContainerBuilder $builder): void
     {
-        /** @var Config $mlc */
-        $mlc = $container->get(Config::class);
+        $builder->addDefinitions([
+            // 1) FileNamer
+            FileNamer::class => fn() => new HashPathNamer(),
 
-        $defaultDisk = $mlc->get('files.default_disk', 'local');
-        $disks       = $mlc->get('files.disks', []);
-        $maxBytes    = $mlc->get('files.max_bytes', 20 * 1024 * 1024);
-        $mimeAllow   = $mlc->get('files.mime_allow', []);
+            // 2) FileStorage (only local here; extend with S3/GCS if needed)
+            FileStorage::class => function ($c) {
+                /** @var MlcConfig $mlc */
+                $mlc = $c->get(MlcConfig::class);
 
-        // 1) FileNamer
-        $container->set(FileNamer::class, fn() => new HashPathNamer());
+                $disk   = $mlc->get('files.default_disk', 'local');
+                $disks  = $mlc->get('files.disks', []);
+                $cfg    = $disks[$disk] ?? [];
+                $root   = $cfg['root'] ?? 'storage/app';
+                $public = rtrim($cfg['public_base_url'] ?? '', '/');
 
-        // 2) FileStorage via factory methods
-        $container->set(FileStorage::class, function() use ($defaultDisk, $disks) {
-            if (! isset($disks[$defaultDisk])) {
-                throw new \RuntimeException("Disk '{$defaultDisk}' not configured");
-            }
+                // ensure storage root
+                if (! is_dir($root)) {
+                    mkdir($root, 0755, true);
+                }
 
-            return match ($defaultDisk) {
-                'local' => $this->makeLocal($disks['local']),
-                's3'    => $this->makeS3($disks['s3']),
-                'gcs'   => $this->makeGcs($disks['gcs']),
-                default => throw new \RuntimeException("Unsupported disk '{$defaultDisk}'"),
-            };
-        });
+                // ensure public folder under public/{fragment}
+                if ($public !== '' && ! preg_match('#^https?://#i', $public)) {
+                    $frag = ltrim($public, '/');
+                    $pubDir = dirname(__DIR__, 3) . "/public/{$frag}";
+                    if (! is_dir($pubDir)) {
+                        mkdir($pubDir, 0755, true);
+                    }
+                }
 
-        // 3) UploadManager
-        $container->set(UploadManager::class, function($c) use ($maxBytes, $mimeAllow) {
-            return new UploadManager(
-                $c->get(FileStorage::class),
-                $c->get(FileNamer::class),
-                (int)   $maxBytes,
-                (array) $mimeAllow
-            );
-        });
+                return new LocalStorage($root, $public);
+            },
+
+            // 3) UploadManager
+            UploadManager::class => function ($c) {
+                /** @var MlcConfig $mlc */
+                $mlc      = $c->get(MlcConfig::class);
+                $maxBytes = (int) $mlc->get('files.max_bytes', 20 * 1024 * 1024);
+                $mimeAllow= (array)$mlc->get('files.mime_allow', []);
+
+                return new UploadManager(
+                    $c->get(FileStorage::class),
+                    $c->get(FileNamer::class),
+                    $maxBytes,
+                    $mimeAllow
+                );
+            },
+        ]);
     }
 
     private function makeLocal(array $cfg): FileStorage
