@@ -3,6 +3,7 @@
 namespace MonkeysLegion\Files\Upload;
 
 use GuzzleHttp\Psr7\Utils as Psr7;
+use Laminas\Diactoros\UploadedFile as DiactorosUploadedFile;
 use MonkeysLegion\Files\Contracts\FileNamer;
 use MonkeysLegion\Files\Contracts\FileStorage;
 use MonkeysLegion\Files\DTO\FileMeta;
@@ -40,12 +41,24 @@ final class UploadManager
         }
 
         $entry = $files[$field];
-        // PSR-7 may return either an UploadedFileInterface or an array of them
+        // Normalize to UploadedFileInterface
         if ($entry instanceof UploadedFileInterface) {
             $file = $entry;
         } elseif (is_array($entry)) {
-            $file = reset($entry);
-            if (! $file instanceof UploadedFileInterface) {
+            // Could be array of UploadedFileInterface or raw PHP file array
+            if (isset($entry[0]) && $entry[0] instanceof UploadedFileInterface) {
+                $file = $entry[0];
+            } elseif (isset($entry['tmp_name'])) {
+                // Raw $_FILES entry
+                $stream = Psr7::streamFor(fopen($entry['tmp_name'], 'rb'));
+                $file = new DiactorosUploadedFile(
+                    $stream,
+                    $entry['size']  ?? null,
+                    $entry['error'] ?? UPLOAD_ERR_OK,
+                    $entry['name']  ?? null,
+                    $entry['type']  ?? null
+                );
+            } else {
                 throw new \RuntimeException("Invalid upload for field '{$field}'.");
             }
         } else {
