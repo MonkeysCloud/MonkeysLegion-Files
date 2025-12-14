@@ -28,14 +28,16 @@
       "MonkeysLegion\\Files\\": "src/"
     },
     "files": [
-      "src/helpers.php",
-      "tests/phpstan-stubs.php"
+      "src/helpers.php"
     ]
   },
   "autoload-dev": {
     "psr-4": {
       "MonkeysLegion\\Files\\Tests\\": "tests/"
-    }
+    },
+    "files": [
+      "tests/phpstan-stubs.php"
+    ]
   },
   "suggest": {
     "aws/aws-sdk-php": "^3.300 for S3 storage driver",
