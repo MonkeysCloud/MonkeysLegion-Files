@@ -15,17 +15,21 @@
     "psr/http-message": "^1.1 || ^2.0",
     "guzzlehttp/psr7": "^2.6",
     "http-interop/http-factory-guzzle": "^1.2",
-    "dflydev/apache-mime-types": "^1.0"
+    "dflydev/apache-mime-types": "^1.0",
+    "laminas/laminas-diactoros": "^3.0"
   },
   "require-dev": {
-    "phpunit/phpunit": "^11.3"
+    "phpunit/phpunit": "^11.3",
+    "phpstan/phpstan": "^1.10",
+    "psr/container": "^1.1 || ^2.0"
   },
   "autoload": {
     "psr-4": {
       "MonkeysLegion\\Files\\": "src/"
     },
     "files": [
-      "src/helpers.php"
+      "src/helpers.php",
+      "tests/phpstan-stubs.php"
     ]
   },
   "autoload-dev": {

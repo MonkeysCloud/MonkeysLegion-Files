@@ -133,9 +133,9 @@ final class GcsStorage implements FileStorage
      * Generates a public URL for a file in Google Cloud Storage.
      *
      * @param string $path The path of the file to generate the URL for.
-     * @return string Returns the public URL if configured, otherwise the GCS default URL.
+     * @return string|null Returns the public URL if configured, otherwise the GCS default URL.
      */
-    public function publicUrl(string $path): string
+    public function publicUrl(string $path): ?string
     {
         $key = $this->key($path);
 

@@ -85,7 +85,7 @@ if (!function_exists('ml_files_put_path')) {
         $mime ??= (function(string $p){
             $f = finfo_open(FILEINFO_MIME_TYPE);
             $m = finfo_file($f, $p) ?: 'application/octet-stream';
-            finfo_close($f);
+
             return $m;
         })($localPath);
         $name ??= basename($localPath);
@@ -118,8 +118,8 @@ if (!function_exists('ml_files_url')) {
         // For local private disks, this will be null. For public disks/CDN it returns URL.
         // You can build your own serving URL using signed URLs below.
         $storage = ml_files_storage();
-        if (method_exists($storage, 'publicUrl')) {
-            return $storage->publicUrl($path); // optional
+        if ($url = $storage->publicUrl($path)) {
+            return $url;
         }
         // Fallback: if disk returns null on put, try building from config public_base_url
         $cfg = config()['files'] ?? [];

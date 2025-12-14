@@ -30,11 +30,8 @@ final class UploadManager
         private FileNamer   $namer,
         private int         $maxBytes,
         private array       $mimeAllow = [],
-                            $onAfterSave = null
+        ?callable           $onAfterSave = null
     ) {
-        if ($onAfterSave !== null && ! is_callable($onAfterSave)) {
-            throw new \InvalidArgumentException('UploadManager::$onAfterSave must be callable or null.');
-        }
         $this->onAfterSave = $onAfterSave;
     }
 

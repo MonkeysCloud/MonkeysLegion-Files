@@ -52,4 +52,12 @@ interface FileStorage
      */
     public function exists(string $path): bool;
 
+    /**
+     * Generate a public URL for the given path.
+     *
+     * @param string $path The relative path to generate the URL for.
+     * @return string|null The public URL or null if not configured.
+     */
+    public function publicUrl(string $path): ?string;
+
 }

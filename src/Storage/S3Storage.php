@@ -86,4 +86,19 @@ final class S3Storage implements FileStorage
             return false;
         }
     }
+
+    /**
+     * Generate a public URL for the given path.
+     *
+     * @param string $path The relative path to generate the URL for.
+     * @return string|null The public URL or null if not configured.
+     */
+    public function publicUrl(string $path): ?string
+    {
+        if (!$this->publicBaseUrl) {
+            return null;
+        }
+        $key = ltrim($this->prefix.$path, '/');
+        return rtrim($this->publicBaseUrl, '/').'/'.$key;
+    }
 }
