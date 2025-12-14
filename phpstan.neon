@@ -2,5 +2,8 @@ parameters:
     level: 5
     paths:
         - src
-    bootstrapFiles:
-        - tests/phpstan-stubs.php
+        - tests
+    scanFiles:
+        - stubs/Imagick.php
+    tmpDir: .phpstan.cache
+

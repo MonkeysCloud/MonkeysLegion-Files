@@ -1,27 +1,45 @@
 {
   "name": "monkeyscloud/monkeyslegion-files",
-  "description": "File storage, uploads, and helpers for the MonkeysLegion framework. No controllers; pure services and global functions.",
+  "description": "Production-ready file storage and upload management for the MonkeysLegion framework ecosystem",
   "type": "library",
   "license": "MIT",
   "keywords": [
     "monkeyslegion",
     "files",
-    "uploads",
     "storage",
-    "psr-7"
+    "upload",
+    "s3",
+    "gcs",
+    "image-processing",
+    "chunked-upload"
+  ],
+  "authors": [
+    {
+      "name": "MonkeysCloud",
+      "email": "dev@monkeyscloud.com"
+    }
   ],
   "require": {
-    "php": ">=8.4",
-    "psr/http-message": "^1.1 || ^2.0",
-    "guzzlehttp/psr7": "^2.6",
-    "http-interop/http-factory-guzzle": "^1.2",
-    "dflydev/apache-mime-types": "^1.0",
-    "laminas/laminas-diactoros": "^3.0"
+    "php": "^8.4",
+    "monkeyscloud/monkeyslegion-mlc": "^1.0|^2.0",
+    "monkeyscloud/monkeyslegion-cache": "^1.0",
+    "monkeyscloud/monkeyslegion-database": "^1.0",
+    "psr/log": "^3.0"
   },
   "require-dev": {
-    "phpunit/phpunit": "^11.3",
+    "ext-gd": "*",
+    "aws/aws-sdk-php": "^3.300",
+    "friendsofphp/php-cs-fixer": "^3.0",
+    "google/cloud-storage": "^1.35",
+    "mockery/mockery": "^1.6",
     "phpstan/phpstan": "^1.10",
-    "psr/container": "^1.1 || ^2.0"
+    "phpunit/phpunit": "^11.0"
+  },
+  "suggest": {
+    "aws/aws-sdk-php": "Required for S3-compatible storage (^3.300)",
+    "google/cloud-storage": "Required for Google Cloud Storage (^1.35)",
+    "ext-gd": "Required for image processing with GD",
+    "ext-imagick": "Required for advanced image processing with ImageMagick"
   },
   "autoload": {
     "psr-4": {
@@ -34,23 +52,28 @@
   "autoload-dev": {
     "psr-4": {
       "MonkeysLegion\\Files\\Tests\\": "tests/"
+    }
+  },
+    "scripts": {
+        "test": "phpunit",
+        "test-coverage": "phpunit --coverage-html coverage",
+        "phpstan": "phpstan analyse src --memory-limit=2G",
+        "quality": [
+            "@phpstan",
+            "@test"
+        ],
+        "cs-fix": "php-cs-fixer fix",
+        "cs-check": "php-cs-fixer fix --dry-run --diff"
     },
-    "files": [
-      "tests/phpstan-stubs.php"
-    ]
+  "config": {
+    "sort-packages": true,
+    "optimize-autoloader": true
   },
-  "suggest": {
-    "aws/aws-sdk-php": "^3.300 for S3 storage driver",
-    "google/cloud-storage": "^1.45 for Google Cloud Storage driver"
-  },
+  "minimum-stability": "stable",
+  "prefer-stable": true,
   "extra": {
-    "monkeyslegion": {
-      "providers": [
-        "MonkeysLegion\\Files\\Support\\ServiceProvider"
-      ],
-      "config": {
-        "files": "config/files.mlc"
-      }
+    "branch-alias": {
+      "dev-main": "2.0.x-dev"
     }
   }
 }
