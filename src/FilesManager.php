@@ -46,7 +46,7 @@ class FilesManager
     {
         $this->config = $this->mergeConfig($config);
         $this->logger = $logger ?? new NullLogger();
-        $this->defaultDisk = $this->config['default_disk'];
+        $this->defaultDisk = $this->config['default'] ?? $this->config['default_disk'] ?? 'local';
         
         $this->initializeDisks();
         $this->initializeOptionalServices();
@@ -623,7 +623,8 @@ class FilesManager
     private function mergeConfig(array $config): array
     {
         $defaults = [
-            'default_disk' => 'local',
+            'default' => 'local',
+            'default_disk' => 'local', // Legacy fallback
             'disks' => [
                 'local' => [
                     'driver' => 'local',
