@@ -485,10 +485,14 @@ final class FilesServiceProvider
      */
     private function bind(string $abstract, callable $concrete): void
     {
-        if (method_exists($this->container, 'bind')) {
-            $this->container->bind($abstract, $concrete);
-        } elseif (method_exists($this->container, 'set')) {
-            $this->container->set($abstract, $concrete);
+        try {
+            if (method_exists($this->container, 'set')) {
+                $this->container->set($abstract, $concrete);
+            } elseif (method_exists($this->container, 'bind')) {
+                $this->container->bind($abstract, $concrete);
+            }
+        } catch (\Throwable) {
+            // Container does not support runtime binding — silently skip.
         }
     }
 
@@ -497,15 +501,19 @@ final class FilesServiceProvider
      */
     private function singleton(string $abstract, callable $concrete): void
     {
-        if (method_exists($this->container, 'singleton')) {
-            $this->container->singleton($abstract, $concrete);
-        } elseif (method_exists($this->container, 'share')) {
-            $this->container->share($abstract, $concrete);
-        } else {
-            $instance = null;
-            $this->bind($abstract, function () use ($concrete, &$instance) {
-                return $instance ??= $concrete();
-            });
+        try {
+            if (method_exists($this->container, 'singleton')) {
+                $this->container->singleton($abstract, $concrete);
+            } elseif (method_exists($this->container, 'share')) {
+                $this->container->share($abstract, $concrete);
+            } elseif (method_exists($this->container, 'set')) {
+                $instance = null;
+                $this->container->set($abstract, function () use ($concrete, &$instance) {
+                    return $instance ??= $concrete();
+                });
+            }
+        } catch (\Throwable) {
+            // Container does not support runtime registration — silently skip.
         }
     }
 
