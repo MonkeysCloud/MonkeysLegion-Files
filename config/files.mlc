@@ -4,311 +4,322 @@
 # =============================================================================
 # Default Storage Disk
 # =============================================================================
-files.default = env("FILES_DISK", "local")
+files{
+    default = ${FILES_DISK:-local}
+ 
+    # =========================================================================
+    # Storage Disks
+    # =========================================================================
 
-# =============================================================================
-# Storage Disks
-# =============================================================================
-
-# Local Filesystem Storage
-files.disks.local {
-    driver = "local"
-    root = env("FILES_LOCAL_ROOT", "storage/files")
-    url = env("FILES_LOCAL_URL", "")
-    visibility = "private"
-    
-    permissions.file.public = 0644
-    permissions.file.private = 0600
-    permissions.dir.public = 0755
-    permissions.dir.private = 0700
-}
-
-# AWS S3 Storage
-files.disks.s3 {
-    driver = "s3"
-    key = env("AWS_ACCESS_KEY_ID", "")
-    secret = env("AWS_SECRET_ACCESS_KEY", "")
-    region = env("AWS_DEFAULT_REGION", "us-east-1")
-    bucket = env("AWS_BUCKET", "")
-    endpoint = env("AWS_ENDPOINT", "")
-    use_path_style_endpoint = env("AWS_USE_PATH_STYLE", false)
-    visibility = "private"
-    throw = true
-}
-
-# MinIO Storage (S3-compatible)
-files.disks.minio {
-    driver = "s3"
-    key = env("MINIO_ACCESS_KEY", "")
-    secret = env("MINIO_SECRET_KEY", "")
-    region = "us-east-1"
-    bucket = env("MINIO_BUCKET", "")
-    endpoint = env("MINIO_ENDPOINT", "")
-    use_path_style_endpoint = true
-    visibility = "private"
-}
-
-# DigitalOcean Spaces
-files.disks.spaces {
-    driver = "s3"
-    key = env("DO_SPACES_KEY", "")
-    secret = env("DO_SPACES_SECRET", "")
-    region = env("DO_SPACES_REGION", "nyc3")
-    bucket = env("DO_SPACES_BUCKET", "")
-    endpoint = env("DO_SPACES_ENDPOINT", "")
-    visibility = "private"
-}
-
-# Google Cloud Storage
-files.disks.gcs {
-    driver = "gcs"
-    project_id = env("GOOGLE_CLOUD_PROJECT_ID", "")
-    bucket = env("GOOGLE_CLOUD_STORAGE_BUCKET", "")
-    key_file_path = env("GOOGLE_CLOUD_KEY_FILE", "")
-    path_prefix = env("GOOGLE_CLOUD_STORAGE_PATH_PREFIX", "")
-    visibility = "private"
-    url = env("GOOGLE_CLOUD_STORAGE_URL", "")
-    api_endpoint = env("GOOGLE_CLOUD_STORAGE_API_ENDPOINT", "")
-}
-
-# Firebase Storage (uses GCS backend)
-files.disks.firebase {
-    driver = "gcs"
-    project_id = env("FIREBASE_PROJECT_ID", "")
-    bucket = env("FIREBASE_STORAGE_BUCKET", "")
-    key_file_path = env("FIREBASE_CREDENTIALS", "")
-    visibility = "private"
-}
-
-# =============================================================================
-# Upload Settings
-# =============================================================================
-files.upload {
-    # Maximum file size in bytes (default: 20MB)
-    max_size = env("UPLOAD_MAX_BYTES", 20971520)
-    
-    # Allowed MIME types
-    allowed_mimes = [
-        "image/jpeg",
-        "image/png",
-        "image/gif",
-        "image/webp",
-        "image/svg+xml",
-        "application/pdf",
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/vnd.ms-excel",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "text/plain",
-        "text/csv"
-    ]
-    
-    # Blocked MIME types (security)
-    blocked_mimes = [
-        "application/x-php",
-        "application/x-httpd-php",
-        "application/x-executable",
-        "application/x-msdownload"
-    ]
-    
-    # Chunk size for multipart uploads (5MB)
-    chunk_size = env("UPLOAD_CHUNK_SIZE", 5242880)
-    
-    # Chunk upload session expiry (24 hours)
-    chunk_expiry = env("UPLOAD_CHUNK_EXPIRY", 86400)
-    
-    # Temp directory for chunked uploads
-    temp_dir = env("UPLOAD_TEMP_DIR", "storage/tmp/uploads")
-    
-    # Verify MIME type by reading file content
-    verify_mime = true
-    
-    # Generate checksums for uploaded files
-    generate_checksum = true
-}
-
-# =============================================================================
-# Image Processing
-# =============================================================================
-files.image {
-    # Driver: gd or imagick
-    driver = env("IMAGE_DRIVER", "gd")
-    
-    # Maximum dimensions
-    max_width = env("IMAGE_MAX_WIDTH", 4096)
-    max_height = env("IMAGE_MAX_HEIGHT", 4096)
-    
-    # Default JPEG/WebP quality
-    quality = env("IMAGE_QUALITY", 85)
-    
-    # Process images asynchronously
-    async_processing = env("IMAGE_ASYNC_PROCESSING", false)
-    
-    # Predefined image conversions
-    conversions {
-        thumb {
-            width = 150
-            height = 150
-            fit = "cover"
-            quality = 80
-        }
-        small {
-            width = 300
-            height = 300
-            fit = "contain"
-            quality = 85
-        }
-        medium {
-            width = 800
-            height = 600
-            fit = "contain"
-            quality = 85
-        }
-        large {
-            width = 1920
-            height = 1080
-            fit = "contain"
-            quality = 90
-        }
-        social {
-            width = 1200
-            height = 630
-            fit = "cover"
-            quality = 85
+    # Local Filesystem Storage
+    disks {
+        local {
+            driver = "local"
+            root = ${FILES_LOCAL_ROOT:-"storage/files"}
+            url = ${FILES_LOCAL_URL}
+            visibility = "private"
+            
+            permissions {
+                file {
+                    public = 0644
+                    private = 0600
+                }
+                dir{
+                    public = 0755
+                    private = 0700
+                }
+            }
         }
     }
-}
 
-# =============================================================================
-# CDN Configuration
-# =============================================================================
-files.cdn {
-    enabled = env("CDN_ENABLED", false)
-    url = env("CDN_URL", "")
-    signing_key = env("CDN_SIGNING_KEY", "")
-    default_ttl = env("CDN_DEFAULT_TTL", 86400)
-}
-
-# =============================================================================
-# Security Settings
-# =============================================================================
-files.security {
-    # Signing key for secure URLs
-    signing_key = env("FILES_SIGNING_KEY", "")
-    
-    # Sanitize file paths
-    sanitize_paths = true
-    
-    # Virus scanning
-    virus_scan {
-        enabled = env("VIRUS_SCAN_ENABLED", false)
-        driver = env("VIRUS_SCAN_DRIVER", "clamav")
-        clamav_socket = env("VIRUS_SCAN_CLAMAV_SOCKET", "/var/run/clamav/clamd.ctl")
-        http_endpoint = env("VIRUS_SCAN_HTTP_ENDPOINT", "")
-        http_api_key = env("VIRUS_SCAN_HTTP_API_KEY", "")
-        quarantine_path = env("VIRUS_SCAN_QUARANTINE", "storage/quarantine")
+    # AWS S3 Storage
+    s3 {
+        driver = "s3"
+        key = ${AWS_ACCESS_KEY_ID}
+        secret = ${AWS_SECRET_ACCESS_KEY}
+        region = ${AWS_DEFAULT_REGION:-"us-east-1"}
+        bucket = ${AWS_BUCKET}
+        endpoint = ${AWS_ENDPOINT}
+        use_path_style_endpoint = ${AWS_USE_PATH_STYLE:-false}
+        visibility = "private"
+        throw = true
     }
-}
 
-# =============================================================================
-# Rate Limiting
-# =============================================================================
-files.rate_limiting {
-    enabled = env("RATE_LIMIT_ENABLED", true)
-    uploads_per_minute = env("RATE_LIMIT_UPLOADS_PER_MINUTE", 10)
-    bytes_per_hour = env("RATE_LIMIT_BYTES_PER_HOUR", 104857600)
-    concurrent_uploads = env("RATE_LIMIT_CONCURRENT", 3)
-}
 
-# =============================================================================
-# Garbage Collection
-# =============================================================================
-files.garbage_collection {
-    # Days to keep soft-deleted files
-    deleted_files_days = env("GC_DELETED_FILES_DAYS", 30)
-    
-    # Hours to keep incomplete uploads
-    incomplete_uploads_hours = env("GC_INCOMPLETE_UPLOADS_HOURS", 24)
-    
-    # Days to keep unused image conversions
-    unused_conversions_days = env("GC_UNUSED_CONVERSIONS_DAYS", 7)
-}
-
-# =============================================================================
-# Database Tracking
-# =============================================================================
-files.database {
-    enabled = env("DATABASE_TRACKING_ENABLED", true)
-    connection = env("DATABASE_CONNECTION", "default")
-    
-    tables {
-        files = "ml_files"
-        conversions = "ml_file_conversions"
-        chunked_uploads = "ml_chunked_uploads"
-    }
-    
-    # Track file access counts
-    track_access = env("DATABASE_TRACK_ACCESS", true)
-    
-    # Use soft deletes
-    soft_delete = env("DATABASE_SOFT_DELETE", true)
-}
-
-# =============================================================================
-# Logging
-# =============================================================================
-files.logging {
-    enabled = env("FILES_LOG_ENABLED", true)
-    channel = env("FILES_LOG_CHANNEL", "files")
-    level = env("FILES_LOG_LEVEL", "info")
-    
-    # Events to log
-    events = [
-        "upload",
-        "delete",
-        "access",
-        "error"
-    ]
-}
-
-# =============================================================================
-# File Collections (Presets)
-# =============================================================================
-files.collections {
-    avatars {
-        disk = "local"
-        path = "avatars"
-        max_size = 2097152
-        allowed_mimes = ["image/jpeg", "image/png", "image/webp"]
-        conversions = ["thumb", "small"]
-    }
-    
-    documents {
-        disk = "s3"
-        path = "documents"
-        max_size = 10485760
-        allowed_mimes = [
-            "application/pdf",
-            "application/msword",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        ]
+    # MinIO Storage (S3-compatible)
+    minio {
+        driver = "s3"
+        key = ${MINIO_ACCESS_KEY}
+        secret = ${MINIO_SECRET_KEY}
+        region = "us-east-1"
+        bucket = ${MINIO_BUCKET}
+        endpoint = ${MINIO_ENDPOINT}
+        use_path_style_endpoint = true
         visibility = "private"
     }
-    
-    media {
-        disk = "s3"
-        path = "media"
-        max_size = 104857600
+
+    # DigitalOcean Spaces
+    spaces {
+        driver = "s3"
+        key = ${DO_SPACES_KEY}
+        secret = ${DO_SPACES_SECRET}
+        region = ${DO_SPACES_REGION:-nyc3}
+        bucket = ${DO_SPACES_BUCKET}
+        endpoint = ${DO_SPACES_ENDPOINT}
+        visibility = "private"
+    }
+
+    # Google Cloud Storage
+    gcs {
+        driver = "gcs"
+        project_id = ${GOOGLE_CLOUD_PROJECT_ID}
+        bucket = ${GOOGLE_CLOUD_STORAGE_BUCKET}
+        key_file_path = ${GOOGLE_CLOUD_KEY_FILE}
+        path_prefix = ${GOOGLE_CLOUD_STORAGE_PATH_PREFIX}
+        visibility = "private"
+        url = ${GOOGLE_CLOUD_STORAGE_URL}
+        api_endpoint = ${GOOGLE_CLOUD_STORAGE_API_ENDPOINT}
+    }
+
+    # Firebase Storage (uses GCS backend)
+    firebase {
+        driver = "gcs"
+        project_id = ${FIREBASE_PROJECT_ID}
+        bucket = ${FIREBASE_STORAGE_BUCKET}
+        key_file_path = ${FIREBASE_CREDENTIALS}
+        visibility = "private"
+    }
+
+    # =============================================================================
+    # Upload Settings
+    # =============================================================================
+    upload {
+        # Maximum file size in bytes (default: 20MB)
+        max_size = ${UPLOAD_MAX_BYTES:-20971520}
+        
+        # Allowed MIME types
         allowed_mimes = [
             "image/jpeg",
             "image/png",
             "image/gif",
             "image/webp",
-            "video/mp4",
-            "video/webm",
-            "audio/mpeg",
-            "audio/wav"
+            "image/svg+xml",
+            "application/pdf",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "text/plain",
+            "text/csv"
         ]
-        conversions = ["thumb", "medium", "large"]
+        
+        # Blocked MIME types (security)
+        blocked_mimes = [
+            "application/x-php",
+            "application/x-httpd-php",
+            "application/x-executable",
+            "application/x-msdownload"
+        ]
+        
+        # Chunk size for multipart uploads (5MB)
+        chunk_size = ${UPLOAD_CHUNK_SIZE:-5242880}
+        
+        # Chunk upload session expiry (24 hours)
+        chunk_expiry = ${UPLOAD_CHUNK_EXPIRY:-86400}
+        
+        # Temp directory for chunked uploads
+        temp_dir = ${UPLOAD_TEMP_DIR:-"storage/tmp/uploads"}
+        
+        # Verify MIME type by reading file content
+        verify_mime = true
+        
+        # Generate checksums for uploaded files
+        generate_checksum = true
+    }
+
+    # =============================================================================
+    # Image Processing
+    # =============================================================================
+    image {
+        # Driver: gd or imagick
+        driver = ${IMAGE_DRIVER:-gd}
+        
+        # Maximum dimensions
+        max_width = ${IMAGE_MAX_WIDTH:-4096}
+        max_height = ${IMAGE_MAX_HEIGHT:-4096}
+        
+        # Default JPEG/WebP quality
+        quality = ${IMAGE_QUALITY:-85}
+        
+        # Process images asynchronously
+        async_processing = ${IMAGE_ASYNC_PROCESSING:-false}
+        
+        # Predefined image conversions
+        conversions {
+            thumb {
+                width = 150
+                height = 150
+                fit = "cover"
+                quality = 80
+            }
+            small {
+                width = 300
+                height = 300
+                fit = "contain"
+                quality = 85
+            }
+            medium {
+                width = 800
+                height = 600
+                fit = "contain"
+                quality = 85
+            }
+            large {
+                width = 1920
+                height = 1080
+                fit = "contain"
+                quality = 90
+            }
+            social {
+                width = 1200
+                height = 630
+                fit = "cover"
+                quality = 85
+            }
+        }
+    }
+
+    # =============================================================================
+    # CDN Configuration
+    # =============================================================================
+    cdn {
+        enabled = ${CDN_ENABLED:-false}
+        url = ${CDN_URL:-""}
+        signing_key = ${CDN_SIGNING_KEY:-""}
+        default_ttl = ${CDN_DEFAULT_TTL:-86400}
+    }
+
+    # =============================================================================
+    # Security Settings
+    # =============================================================================
+    security {
+        # Signing key for secure URLs
+        signing_key = ${FILES_SIGNING_KEY:-""}
+        
+        # Sanitize file paths
+        sanitize_paths = true
+        
+        # Virus scanning
+        virus_scan {
+            enabled = ${VIRUS_SCAN_ENABLED:-false}
+            driver = ${VIRUS_SCAN_DRIVER:-"clamav"}
+            clamav_socket = ${VIRUS_SCAN_CLAMAV_SOCKET:-"/var/run/clamav/clamd.ctl"}
+            http_endpoint = ${VIRUS_SCAN_HTTP_ENDPOINT:-""}
+            http_api_key = ${VIRUS_SCAN_HTTP_API_KEY:-""}
+            quarantine_path = ${VIRUS_SCAN_QUARANTINE:-"storage/quarantine"}
+        }
+    }
+
+    # =============================================================================
+    # Rate Limiting
+    # =============================================================================
+    rate_limiting {
+        enabled = ${RATE_LIMIT_ENABLED:-true}
+        uploads_per_minute = ${RATE_LIMIT_UPLOADS_PER_MINUTE:-10}
+        bytes_per_hour = ${RATE_LIMIT_BYTES_PER_HOUR:-104857600}
+        concurrent_uploads = ${RATE_LIMIT_CONCURRENT:-3}
+    }
+
+    # =============================================================================
+    # Garbage Collection
+    # =============================================================================
+    garbage_collection {
+        # Days to keep soft-deleted files
+        deleted_files_days = ${GC_DELETED_FILES_DAYS:-30}
+        
+        # Hours to keep incomplete uploads
+        incomplete_uploads_hours = ${GC_INCOMPLETE_UPLOADS_HOURS:-24}
+        
+        # Days to keep unused image conversions
+        unused_conversions_days = ${GC_UNUSED_CONVERSIONS_DAYS:-7}
+    }
+
+    # =============================================================================
+    # Database Tracking
+    # =============================================================================
+    database {
+        enabled = ${DATABASE_TRACKING_ENABLED:-true}
+        connection = ${DATABASE_CONNECTION:-default}
+        
+        tables {
+            files = "ml_files"
+            conversions = "ml_file_conversions"
+            chunked_uploads = "ml_chunked_uploads"
+        }
+        
+        # Track file access counts
+        track_access = ${DATABASE_TRACK_ACCESS:-true}
+        
+        # Use soft deletes
+        soft_delete = ${DATABASE_SOFT_DELETE:-true}
+    }
+
+    # =============================================================================
+    # Logging
+    # =============================================================================
+    logging {
+        enabled = ${FILES_LOG_ENABLED:-true}
+        channel = ${FILES_LOG_CHANNEL:-"files"}
+        level = ${FILES_LOG_LEVEL:-"info"}
+        
+        # Events to log
+        events = [
+            "upload",
+            "delete",
+            "access",
+            "error"
+        ]
+    }
+
+    # =============================================================================
+    # File Collections (Presets)
+    # =============================================================================
+    collections {
+        avatars {
+            disk = "local"
+            path = "avatars"
+            max_size = 2097152
+            allowed_mimes = ["image/jpeg", "image/png", "image/webp"]
+            conversions = ["thumb", "small"]
+        }
+        
+        documents {
+            disk = "s3"
+            path = "documents"
+            max_size = 10485760
+            allowed_mimes = [
+                "application/pdf",
+                "application/msword",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            ]
+            visibility = "private"
+        }
+        
+        media {
+            disk = "s3"
+            path = "media"
+            max_size = 104857600
+            allowed_mimes = [
+                "image/jpeg",
+                "image/png",
+                "image/gif",
+                "image/webp",
+                "video/mp4",
+                "video/webm",
+                "audio/mpeg",
+                "audio/wav"
+            ]
+            conversions = ["thumb", "medium", "large"]
+        }
     }
 }

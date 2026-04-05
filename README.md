@@ -23,9 +23,15 @@ composer require monkeyscloud/monkeyslegion-files
 ```
 
 This package requires the MonkeysLegion ecosystem:
+
 - **MonkeysLegion-Mlc** - Configuration management (auto-included)
 - **MonkeysLegion-Cache** - Caching and rate limiting (auto-included)
 - **MonkeysLegion-Database** - Database tracking (auto-included)
+
+### Mlc Configuration
+
+For better understanding to Mlc package, please check the Mlc documentation:
+[Mlc Documentation](https://monkeyslegion.com/docs/packages/mlc)
 
 ### Optional Dependencies
 
@@ -46,15 +52,21 @@ composer require google/cloud-storage
 use MonkeysLegion\Files\FilesServiceProvider;
 use MonkeysLegion\Cache\CacheManager;
 use MonkeysLegion\Database\Factory\ConnectionFactory;
+use MonkeysLegion\Mlc\Parsers\MlcParser;
 
 // Setup with MonkeysLegion ecosystem
 $cacheManager = new CacheManager(require 'config/cache.php');
 $dbConnection = ConnectionFactory::create(require 'config/database.php');
 
+// If $config is null, the provider loads config/files.mlc
+// In that case, a ParserInterface implementation is required.
 $provider = new FilesServiceProvider(
     container: $container,
     cacheManager: $cacheManager,
     dbConnection: $dbConnection,
+    parser: new MlcParser(
+        // Pass required dependencies
+    ),
 );
 $provider->register();
 
@@ -85,9 +97,11 @@ This package integrates seamlessly with the MonkeysLegion framework ecosystem:
 
 ```php
 use MonkeysLegion\Mlc\Loader;
-use MonkeysLegion\Mlc\Parser;
+use MonkeysLegion\Mlc\Parsers\MlcParser as Parser;
 
-$loader = new Loader(new Parser(), 'config');
+$loader = new Loader(new Parser(
+    // Pass any dependencies
+), 'config');
 $config = $loader->loadOne('files');
 
 // Type-safe access
@@ -140,6 +154,9 @@ $repository = new FileRepository($connection);
 
 The package supports both PHP array and MLC configuration formats.
 
+- If you pass a `Config` object or PHP array to `FilesServiceProvider`, the parser is optional.
+- If you pass `null` for `$config`, the provider will try to load `config/files.mlc`, and you must provide a `ParserInterface` implementation.
+
 ### MLC Format (Recommended)
 
 Create `config/files.mlc`:
@@ -147,46 +164,52 @@ Create `config/files.mlc`:
 ```mlc
 # MonkeysLegion Files Configuration
 
-files.default = env("FILES_DISK", "local")
+files {
+    default = ${FILES_DISK:-local}
 
-files.disks.local {
-    driver = "local"
-    root = env("FILES_LOCAL_ROOT", "storage/files")
-    visibility = "private"
-}
+    disks {
+        local {
+            driver = "local"
+            root = ${FILES_LOCAL_ROOT:-"storage/files"}
+            visibility = "private"
+        }
 
-files.disks.s3 {
-    driver = "s3"
-    key = env("AWS_ACCESS_KEY_ID", "")
-    secret = env("AWS_SECRET_ACCESS_KEY", "")
-    region = env("AWS_DEFAULT_REGION", "us-east-1")
-    bucket = env("AWS_BUCKET", "")
-    visibility = "private"
-}
+        s3 {
+            driver = "s3"
+            key = ${AWS_ACCESS_KEY_ID}
+            secret = ${AWS_SECRET_ACCESS_KEY}
+            region = ${AWS_DEFAULT_REGION:-"us-east-1"}
+            bucket = ${AWS_BUCKET}
+            endpoint = ${AWS_ENDPOINT}
+            visibility = "private"
+        }
 
-files.disks.gcs {
-    driver = "gcs"
-    project_id = env("GOOGLE_CLOUD_PROJECT_ID", "")
-    bucket = env("GOOGLE_CLOUD_STORAGE_BUCKET", "")
-    key_file_path = env("GOOGLE_CLOUD_KEY_FILE", "")
-    visibility = "private"
-}
+        gcs {
+            driver = "gcs"
+            project_id = ${GOOGLE_CLOUD_PROJECT_ID}
+            bucket = ${GOOGLE_CLOUD_STORAGE_BUCKET}
+            key_file_path = ${GOOGLE_CLOUD_KEY_FILE}
+            visibility = "private"
+        }
+    }
 
-files.upload {
-    max_size = env("UPLOAD_MAX_BYTES", 20971520)
-    chunk_size = 5242880
-    allowed_mimes = ["image/jpeg", "image/png", "application/pdf"]
-}
+    upload {
+        max_size = ${UPLOAD_MAX_BYTES:-20971520}
+        chunk_size = ${UPLOAD_CHUNK_SIZE:-5242880}
+        chunk_expiry = ${UPLOAD_CHUNK_EXPIRY:-86400}
+        temp_dir = ${UPLOAD_TEMP_DIR:-"storage/tmp/uploads"}
+    }
 
-files.rate_limiting {
-    enabled = true
-    uploads_per_minute = 10
-    bytes_per_hour = 104857600
-    concurrent_uploads = 3
-}
+    rate_limiting {
+        enabled = ${RATE_LIMIT_ENABLED:-true}
+        uploads_per_minute = ${RATE_LIMIT_UPLOADS_PER_MINUTE:-10}
+        bytes_per_hour = ${RATE_LIMIT_BYTES_PER_HOUR:-104857600}
+        concurrent_uploads = ${RATE_LIMIT_CONCURRENT:-3}
+    }
 
-files.database {
-    enabled = env("DATABASE_TRACKING_ENABLED", true)
+    database {
+        enabled = ${DATABASE_TRACKING_ENABLED:-true}
+    }
 }
 ```
 
@@ -198,7 +221,7 @@ Create `config/files.php`:
 <?php
 return [
     'default' => env('FILES_DISK', 'local'),
-    
+
     'disks' => [
         'local' => [
             'driver' => 'local',
@@ -206,7 +229,7 @@ return [
             'url' => env('FILES_PUBLIC_URL'),
             'visibility' => 'private',
         ],
-        
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),
@@ -217,13 +240,13 @@ return [
             'visibility' => 'private',
         ],
     ],
-    
+
     'upload' => [
         'max_size' => env('UPLOAD_MAX_BYTES', 20 * 1024 * 1024),
         'allowed_mimes' => ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'],
         'chunk_size' => 5 * 1024 * 1024, // 5MB
     ],
-    
+
     'security' => [
         'signing_key' => env('FILES_SIGNING_KEY'),
     ],
@@ -627,6 +650,7 @@ php ml migrate
 ```
 
 Tables created:
+
 - `ml_files` - File metadata and tracking
 - `ml_file_conversions` - Image variants (thumbnails, etc.)
 - `ml_chunked_uploads` - Incomplete upload tracking
@@ -651,7 +675,7 @@ Set up garbage collection:
 
 ## Architecture
 
-```
+```text
 MonkeysLegion\Files\
 ├── Contracts/              # Interfaces
 │   ├── StorageInterface
@@ -700,16 +724,6 @@ vendor/bin/phpstan analyse src --level=8
 # Code style
 vendor/bin/php-cs-fixer fix --dry-run --diff
 ```
-
-## Upgrading from v1.x
-
-1. Update `composer.json` to require `^2.0`
-2. Run `composer update`
-3. Run database migrations
-4. Update configuration file
-5. Replace deprecated helper function calls
-
-See [UPGRADE.md](UPGRADE.md) for detailed migration guide.
 
 ## Contributing
 
