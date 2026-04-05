@@ -8,7 +8,6 @@ use MonkeysLegion\Cache\CacheManager;
 use MonkeysLegion\Database\Factory\ConnectionFactory;
 use MonkeysLegion\Mlc\Config;
 use MonkeysLegion\Mlc\Loader;
-use MonkeysLegion\Mlc\Parser;
 use MonkeysLegion\Files\Cdn\CdnUrlGenerator;
 use MonkeysLegion\Files\Contracts\ChunkedUploadInterface;
 use MonkeysLegion\Files\Contracts\StorageInterface;
@@ -23,6 +22,7 @@ use MonkeysLegion\Files\Storage\GoogleCloudStorage;
 use MonkeysLegion\Files\Storage\LocalStorage;
 use MonkeysLegion\Files\Storage\S3Storage;
 use MonkeysLegion\Files\Upload\ChunkedUploadManager;
+use MonkeysLegion\Mlc\Contracts\ParserInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -48,6 +48,7 @@ final class FilesServiceProvider
      * @param CacheManager|null $cacheManager Cache manager instance
      * @param object|null $dbConnection Database connection
      * @param LoggerInterface|null $logger Logger instance
+     * @param ParserInterface|null $parser MLC configuration parser (required if using MLC config files)
      */
     public function __construct(
         private object $container,
@@ -55,6 +56,7 @@ final class FilesServiceProvider
         ?CacheManager $cacheManager = null,
         ?object $dbConnection = null,
         ?LoggerInterface $logger = null,
+        private ?ParserInterface $parser = null,
     ) {
         $this->config = $this->resolveConfig($config);
         $this->cacheManager = $cacheManager ?? $this->resolveCacheManager();
@@ -332,10 +334,14 @@ final class FilesServiceProvider
             return new Config($config);
         }
 
+        if($this->parser === null) {
+            throw new \RuntimeException('Parser instance is required to load configuration from MLC files. Please provide a ParserInterface implementation.');
+        }
+
         // Try to load from MLC file
         try {
             $loader = new Loader(
-                parser: new Parser(),
+                parser: $this->parser,
                 baseDir: $this->getConfigPath(),
             );
             
