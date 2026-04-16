@@ -445,12 +445,12 @@ final class LocalDriver implements StorageInterface
     /** Apply POSIX permissions based on visibility. */
     private function applyPermissions(string $fullPath, Visibility $visibility): void
     {
-        $publicPerms = $this->filePermissions & 0o777;
-        $privatePerms = $publicPerms & 0o700;
+        $configuredPerms = $this->filePermissions & 0o777;
+        $restrictedPerms = $configuredPerms & 0o700;
 
         $perms = match ($visibility) {
-            Visibility::Public  => $publicPerms,
-            Visibility::Private => $privatePerms,
+            Visibility::Public  => $configuredPerms,
+            Visibility::Private => $restrictedPerms,
         };
 
         chmod($fullPath, $perms);
