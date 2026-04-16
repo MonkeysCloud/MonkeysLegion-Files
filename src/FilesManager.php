@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\Files;
 
-use MonkeysLegion\Cache\CacheInterface;
+use MonkeysLegion\Cache\CacheStoreInterface;
 use MonkeysLegion\Files\Contracts\StorageInterface;
 use MonkeysLegion\Files\Entity\FileRecord;
 use MonkeysLegion\Files\Exception\FileNotFoundException;
@@ -36,7 +36,7 @@ final class FilesManager
     private const int CACHE_TTL = 300;
 
     /** Cache key prefix for files metadata. */
-    private const string CACHE_PREFIX = 'ml_files:';
+    private const string CACHE_PREFIX = 'ml_files.';
 
     /**
      * Number of registered disks (computed via get hook).
@@ -75,7 +75,7 @@ final class FilesManager
      * @param string                          $defaultDisk       Default disk name
      * @param UploadValidator|null            $validator         Upload validator
      * @param ContentValidator|null           $contentValidator  MIME sniffing validator
-     * @param CacheInterface|null             $cache             MonkeysLegion Cache 2.0
+     * @param CacheStoreInterface|null         $cache             MonkeysLegion Cache 2.0
      * @param int                             $cacheTtl          Metadata cache TTL in seconds
      * @param LoggerInterface                 $logger            PSR logger
      */
@@ -84,7 +84,7 @@ final class FilesManager
         private readonly string $defaultDisk = 'local',
         private readonly ?UploadValidator $validator = null,
         private readonly ?ContentValidator $contentValidator = null,
-        private readonly ?CacheInterface $cache = null,
+        private readonly ?CacheStoreInterface $cache = null,
         private readonly int $cacheTtl = self::CACHE_TTL,
         private readonly LoggerInterface $logger = new NullLogger(),
     ) {
@@ -200,7 +200,7 @@ final class FilesManager
         return $this->cachedMetadata(
             $path,
             $disk,
-            "checksum:{$algo}",
+            "checksum.{$algo}",
             fn () => $this->disk($disk)->checksum($path, $algo),
         );
     }
@@ -433,7 +433,9 @@ final class FilesManager
     private function cacheKey(string $path, ?string $disk, string $field): string
     {
         $diskName = $disk ?? $this->defaultDisk;
-        return self::CACHE_PREFIX . "{$diskName}:{$path}:{$field}";
+        // Sanitize: PSR-16 reserves {}()/\@: in keys
+        $safePath = str_replace(['/', '\\', '{', '}', '(', ')', '@', ':'], '_', $path);
+        return self::CACHE_PREFIX . "{$diskName}.{$safePath}.{$field}";
     }
 
     /**
@@ -466,14 +468,15 @@ final class FilesManager
         }
 
         $diskName = $disk ?? $this->defaultDisk;
-        $prefix   = self::CACHE_PREFIX . "{$diskName}:{$path}:";
+        $safePath = str_replace(['/', '\\', '{', '}', '(', ')', '@', ':'], '_', $path);
+        $prefix   = self::CACHE_PREFIX . "{$diskName}.{$safePath}.";
 
         // Delete known metadata keys
         $this->cache->deleteMultiple([
             $prefix . 'size',
             $prefix . 'mime',
-            $prefix . 'checksum:sha256',
-            $prefix . 'checksum:md5',
+            $prefix . 'checksum.sha256',
+            $prefix . 'checksum.md5',
         ]);
     }
 }

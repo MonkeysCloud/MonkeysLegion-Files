@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\Files\Cdn;
 
-use MonkeysLegion\Cache\CacheInterface;
+use MonkeysLegion\Cache\CacheStoreInterface;
 use MonkeysLegion\Files\Contracts\CloudStorageInterface;
 use MonkeysLegion\Files\Contracts\StorageInterface;
 
@@ -25,7 +25,7 @@ final class CdnUrlGenerator
 
     public function __construct(
         private readonly ?string $cdnBaseUrl = null,
-        private readonly ?CacheInterface $cache = null,
+        private readonly ?CacheStoreInterface $cache = null,
         private readonly int $versionCacheTtl = self::VERSION_CACHE_TTL,
     ) {}
 
@@ -52,7 +52,8 @@ final class CdnUrlGenerator
     public function versionedUrl(StorageInterface $driver, string $path): string
     {
         if ($this->cache !== null) {
-            $cacheKey = 'ml_cdn:versioned:' . $driver->getDriver() . ':' . $path;
+            $safePath = str_replace(['/', '\\', '{', '}', '(', ')', '@', ':'], '_', $path);
+            $cacheKey = 'ml_cdn.versioned.' . $driver->getDriver() . '.' . $safePath;
 
             return $this->cache->remember(
                 $cacheKey,
@@ -100,7 +101,8 @@ final class CdnUrlGenerator
      */
     public function invalidateVersionedUrl(StorageInterface $driver, string $path): void
     {
-        $this->cache?->delete('ml_cdn:versioned:' . $driver->getDriver() . ':' . $path);
+        $safePath = str_replace(['/', '\\', '{', '}', '(', ')', '@', ':'], '_', $path);
+        $this->cache?->delete('ml_cdn.versioned.' . $driver->getDriver() . '.' . $safePath);
     }
 
     /**
