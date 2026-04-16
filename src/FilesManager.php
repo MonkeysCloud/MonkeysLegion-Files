@@ -37,6 +37,26 @@ final class FilesManager
         get => count($this->disks);
     }
 
+    /** Names of all registered disks. */
+    public array $diskNames {
+        get => array_keys($this->disks);
+    }
+
+    /** The default disk name. */
+    public string $defaultDiskName {
+        get => $this->defaultDisk;
+    }
+
+    /** Whether upload validation is configured. */
+    public bool $hasValidator {
+        get => $this->validator !== null;
+    }
+
+    /** Whether content sniffing is configured. */
+    public bool $hasContentValidator {
+        get => $this->contentValidator !== null;
+    }
+
     /**
      * @param array<string, StorageInterface> $disks        Named storage drivers
      * @param string                          $defaultDisk  Default disk name

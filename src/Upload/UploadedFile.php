@@ -26,6 +26,21 @@ final class UploadedFile
         get => str_starts_with($this->mimeType, 'image/');
     }
 
+    /** Whether the file appears to be a video by MIME. */
+    public bool $isVideo {
+        get => str_starts_with($this->mimeType, 'video/');
+    }
+
+    /** Whether the file appears to be audio by MIME. */
+    public bool $isAudio {
+        get => str_starts_with($this->mimeType, 'audio/');
+    }
+
+    /** Basename without extension. */
+    public string $basename {
+        get => pathinfo($this->clientName, PATHINFO_FILENAME);
+    }
+
     /** Human-readable size. */
     public string $humanSize {
         get => match (true) {

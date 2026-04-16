@@ -83,6 +83,32 @@ class FileRecord
         get => str_starts_with($this->mimeType, 'video/');
     }
 
+    /** Whether the file is an audio file. */
+    public bool $isAudio {
+        get => str_starts_with($this->mimeType, 'audio/');
+    }
+
+    /** Whether the file is a document (PDF, Word, spreadsheet, etc). */
+    public bool $isDocument {
+        get => in_array($this->mimeType, [
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'text/plain',
+            'text/csv',
+            'text/markdown',
+        ], true);
+    }
+
+    /** Directory portion of the path. */
+    public string $directory {
+        get => dirname($this->path) !== '.' ? dirname($this->path) : '';
+    }
+
     /** Whether the file has been soft-deleted. */
     public bool $isDeleted {
         get => $this->deletedAt !== null;

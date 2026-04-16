@@ -93,6 +93,31 @@ final class FileRecordTest extends TestCase
         $this->assertSame('500 B', $this->make(size: 500)->humanSize);
     }
 
+    public function testIsAudioHook(): void
+    {
+        $this->assertTrue($this->make('song.mp3', 'audio/mpeg')->isAudio);
+        $this->assertFalse($this->make('a.jpg', 'image/jpeg')->isAudio);
+    }
+
+    public function testIsDocumentHook(): void
+    {
+        $this->assertTrue($this->make('doc.pdf', 'application/pdf')->isDocument);
+        $this->assertTrue($this->make('doc.csv', 'text/csv')->isDocument);
+        $this->assertFalse($this->make('a.jpg', 'image/jpeg')->isDocument);
+    }
+
+    public function testDirectoryHook(): void
+    {
+        $r = new FileRecord('local', 'images/avatars/photo.jpg', 'photo.jpg', 'image/jpeg', 1024);
+        $this->assertSame('images/avatars', $r->directory);
+    }
+
+    public function testDirectoryHookRootFile(): void
+    {
+        $r = new FileRecord('local', 'photo.jpg', 'photo.jpg', 'image/jpeg', 1024);
+        $this->assertSame('', $r->directory);
+    }
+
     // ── Business Logic ───────────────────────────────────────────
 
     public function testRecordAccess(): void

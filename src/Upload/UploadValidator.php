@@ -19,6 +19,20 @@ final class UploadValidator
     /** @var list<string> */
     private array $errors = [];
 
+    /** Number of active validation rules. */
+    public int $ruleCount {
+        get => ($this->maxSize !== null ? 1 : 0)
+            + ($this->allowedMimes !== [] ? 1 : 0)
+            + ($this->deniedExtensions !== [] ? 1 : 0);
+    }
+
+    /** Human-readable max size (or 'unlimited'). */
+    public string $humanMaxSize {
+        get => $this->maxSize !== null
+            ? $this->formatBytes($this->maxSize)
+            : 'unlimited';
+    }
+
     /**
      * @param int|null       $maxSize          Maximum file size in bytes (null = no limit)
      * @param list<string>   $allowedMimes     Allowed MIME types (empty = all)

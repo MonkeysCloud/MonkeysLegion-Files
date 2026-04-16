@@ -20,6 +20,19 @@ final class VirusScanner implements VirusScannerInterface
     /** @var list<VirusScannerInterface> */
     private readonly array $scanners;
 
+    /** Total number of configured scanners. */
+    public int $scannerCount {
+        get => count($this->scanners);
+    }
+
+    /** Number of currently available scanners. */
+    public int $availableCount {
+        get => count(array_filter(
+            $this->scanners,
+            static fn(VirusScannerInterface $s) => $s->isAvailable(),
+        ));
+    }
+
     public function __construct(VirusScannerInterface ...$scanners)
     {
         $this->scanners = $scanners;

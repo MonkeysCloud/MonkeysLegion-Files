@@ -190,4 +190,62 @@ final class ComponentsTest extends TestCase
         $this->assertTrue($event->chunked);
         $this->assertInstanceOf(\DateTimeImmutable::class, $event->occurredAt);
     }
+
+    // ── VirusScanner hooks ───────────────────────────────────────
+
+    public function testVirusScannerCountHooks(): void
+    {
+        $mock = new class implements VirusScannerInterface {
+            public function scan(string $path): ScanResult { return new ScanResult(isClean: true, scanner: 'mock'); }
+            public function scanStream(mixed $stream): ScanResult { return new ScanResult(isClean: true, scanner: 'mock'); }
+            public function isAvailable(): bool { return true; }
+            public function getName(): string { return 'mock'; }
+        };
+
+        $scanner = new VirusScanner($mock);
+        $this->assertSame(1, $scanner->scannerCount);
+        $this->assertSame(1, $scanner->availableCount);
+    }
+
+    // ── FilesManager hooks ───────────────────────────────────────
+
+    public function testFilesManagerDiskNamesHook(): void
+    {
+        $manager = FilesServiceProvider::create([
+            'primary' => ['driver' => 'memory'],
+            'backup'  => ['driver' => 'memory'],
+        ], 'primary');
+
+        $this->assertSame(['primary', 'backup'], $manager->diskNames);
+        $this->assertSame('primary', $manager->defaultDiskName);
+        $this->assertFalse($manager->hasValidator);
+        $this->assertFalse($manager->hasContentValidator);
+    }
+
+    // ── ValidationException hooks ────────────────────────────────
+
+    public function testValidationExceptionHooks(): void
+    {
+        $e = new \MonkeysLegion\Files\Exception\ValidationException(['err1', 'err2']);
+
+        $this->assertSame(2, $e->errorCount);
+        $this->assertFalse($e->isSingleError);
+        $this->assertSame('err1', $e->firstError);
+    }
+
+    public function testValidationExceptionSingleError(): void
+    {
+        $e = new \MonkeysLegion\Files\Exception\ValidationException(['only one']);
+
+        $this->assertTrue($e->isSingleError);
+    }
+
+    // ── FileNotFoundException hook ───────────────────────────────
+
+    public function testFileNotFoundExceptionPathHook(): void
+    {
+        $e = new \MonkeysLegion\Files\Exception\FileNotFoundException('missing/file.txt');
+
+        $this->assertSame('missing/file.txt', $e->filePath);
+    }
 }
