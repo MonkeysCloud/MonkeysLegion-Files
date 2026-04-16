@@ -164,6 +164,23 @@ final class LocalDriverExtendedTest extends TestCase
         $this->assertTrue(true); // No exception thrown
     }
 
+    public function testCustomFilePermissionsAreApplied(): void
+    {
+        $driver = new LocalDriver(
+            basePath: $this->tmpDir,
+            filePermissions: 0o640,
+        );
+
+        $driver->put('perm-public.txt', 'x', ['visibility' => Visibility::Public]);
+        $driver->put('perm-private.txt', 'x', ['visibility' => Visibility::Private]);
+
+        $publicPerms = fileperms($this->tmpDir . '/perm-public.txt');
+        $privatePerms = fileperms($this->tmpDir . '/perm-private.txt');
+
+        $this->assertSame(0o640, $publicPerms & 0o777);
+        $this->assertSame(0o600, $privatePerms & 0o777);
+    }
+
     public function testVisibilityNonexistent(): void
     {
         $this->assertNull($this->driver->visibility('nope.txt'));

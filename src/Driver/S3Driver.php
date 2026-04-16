@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace MonkeysLegion\Files\Driver;
 
 use MonkeysLegion\Files\Contracts\CloudStorageInterface;
-use MonkeysLegion\Files\Exception\FileNotFoundException;
 use MonkeysLegion\Files\Exception\StorageException;
 use MonkeysLegion\Files\Visibility;
 
@@ -282,19 +281,26 @@ final class S3Driver implements CloudStorageInterface
             $params['Delimiter'] = '/';
         }
 
-        $result = $this->getClient()->listObjectsV2($params);
-        $files  = [];
+        $files = [];
 
-        foreach ($result['Contents'] ?? [] as $object) {
-            $key = $object['Key'];
+        do {
+            $result = $this->getClient()->listObjectsV2($params);
 
-            // Skip the directory prefix itself
-            if ($key === $prefix) {
-                continue;
+            foreach ($result['Contents'] ?? [] as $object) {
+                $key = $object['Key'];
+
+                // Skip the directory prefix itself
+                if ($key === $prefix) {
+                    continue;
+                }
+
+                $files[] = $this->stripPrefix($key);
             }
 
-            $files[] = $this->stripPrefix($key);
-        }
+            $params['ContinuationToken'] = ($result['IsTruncated'] ?? false)
+                ? ($result['NextContinuationToken'] ?? null)
+                : null;
+        } while ($params['ContinuationToken'] !== null);
 
         return $files;
     }
@@ -307,17 +313,24 @@ final class S3Driver implements CloudStorageInterface
             $prefix .= '/';
         }
 
-        $result = $this->getClient()->listObjectsV2([
-            'Bucket'    => $this->bucket,
-            'Prefix'    => $prefix,
-            'Delimiter' => '/',
-        ]);
-
         $dirs = [];
+        $params = [
+            'Bucket' => $this->bucket,
+            'Prefix' => $prefix,
+            'Delimiter' => '/',
+        ];
 
-        foreach ($result['CommonPrefixes'] ?? [] as $prefixEntry) {
-            $dirs[] = rtrim($this->stripPrefix($prefixEntry['Prefix']), '/');
-        }
+        do {
+            $result = $this->getClient()->listObjectsV2($params);
+
+            foreach ($result['CommonPrefixes'] ?? [] as $prefixEntry) {
+                $dirs[] = rtrim($this->stripPrefix($prefixEntry['Prefix']), '/');
+            }
+
+            $params['ContinuationToken'] = ($result['IsTruncated'] ?? false)
+                ? ($result['NextContinuationToken'] ?? null)
+                : null;
+        } while ($params['ContinuationToken'] !== null);
 
         return $dirs;
     }
@@ -332,24 +345,29 @@ final class S3Driver implements CloudStorageInterface
     {
         $prefix = $this->prefixedPath(rtrim($path, '/')) . '/';
 
-        $objects = $this->getClient()->listObjectsV2([
+        $params = [
             'Bucket' => $this->bucket,
             'Prefix' => $prefix,
-        ]);
+        ];
 
-        $keys = array_map(
-            fn(array $o) => ['Key' => $o['Key']],
-            $objects['Contents'] ?? [],
-        );
+        do {
+            $objects = $this->getClient()->listObjectsV2($params);
+            $keys = array_map(
+                fn(array $o) => ['Key' => $o['Key']],
+                $objects['Contents'] ?? [],
+            );
 
-        if ($keys === []) {
-            return true;
-        }
+            if ($keys !== []) {
+                $this->getClient()->deleteObjects([
+                    'Bucket' => $this->bucket,
+                    'Delete' => ['Objects' => $keys],
+                ]);
+            }
 
-        $this->getClient()->deleteObjects([
-            'Bucket' => $this->bucket,
-            'Delete' => ['Objects' => $keys],
-        ]);
+            $params['ContinuationToken'] = ($objects['IsTruncated'] ?? false)
+                ? ($objects['NextContinuationToken'] ?? null)
+                : null;
+        } while ($params['ContinuationToken'] !== null);
 
         return true;
     }
@@ -366,7 +384,7 @@ final class S3Driver implements CloudStorageInterface
             'Key'    => $this->prefixedPath($path),
         ]);
 
-        $ttl = $expiration->getTimestamp() - time();
+        $ttl = $this->resolveTtl($expiration);
 
         $request = $this->getClient()->createPresignedRequest($cmd, "+{$ttl} seconds");
 
@@ -384,7 +402,7 @@ final class S3Driver implements CloudStorageInterface
             'ContentType' => $options['content_type'] ?? null,
         ]));
 
-        $ttl = $expiration->getTimestamp() - time();
+        $ttl = $this->resolveTtl($expiration);
 
         $request = $this->getClient()->createPresignedRequest($cmd, "+{$ttl} seconds");
 
@@ -449,5 +467,16 @@ final class S3Driver implements CloudStorageInterface
         }
 
         return $key;
+    }
+
+    private function resolveTtl(\DateTimeInterface $expiration): int
+    {
+        $ttl = $expiration->getTimestamp() - time();
+
+        if ($ttl <= 0) {
+            throw new StorageException('Expiration must be in the future');
+        }
+
+        return $ttl;
     }
 }

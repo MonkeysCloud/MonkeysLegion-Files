@@ -324,13 +324,26 @@ final class FilesManager
 
     private function generateFilename(string $originalName, array $options): string
     {
+        $safeOriginal = $this->sanitizeClientFilename($originalName);
+
         if ($options['preserve_name'] ?? false) {
-            return $originalName;
+            return $safeOriginal;
         }
 
-        $ext = pathinfo($originalName, PATHINFO_EXTENSION);
+        $ext = strtolower(pathinfo($safeOriginal, PATHINFO_EXTENSION));
         $id  = bin2hex(random_bytes(16));
 
         return $ext !== '' ? "{$id}.{$ext}" : $id;
+    }
+
+    private function sanitizeClientFilename(string $name): string
+    {
+        $name = str_replace("\0", '', $name);
+        $name = str_replace('\\', '/', $name);
+        $name = basename($name);
+        $name = preg_replace('/[\x00-\x1F\x7F]+/u', '', $name) ?? $name;
+        $name = trim($name);
+
+        return ($name !== '' && $name !== '.' && $name !== '..') ? $name : 'file';
     }
 }
