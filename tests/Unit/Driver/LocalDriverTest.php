@@ -269,4 +269,30 @@ final class LocalDriverTest extends TestCase
         // Navigate up from "sub" to above basePath
         $this->driver->get('sub/../../../../../../etc/passwd');
     }
+
+    public function testPathTraversalViaSymlinkIsBlocked(): void
+    {
+        $outside = $this->basePath . '_outside';
+        mkdir($outside, 0o755, true);
+
+        $link = $this->basePath . '/link';
+        if (!@symlink($outside, $link)) {
+            $this->markTestSkipped('Symlinks are not supported in this environment');
+        }
+
+        $this->expectException(SecurityException::class);
+
+        try {
+            $this->driver->put('link/escape.txt', 'blocked');
+        } finally {
+            @unlink($link);
+            @rmdir($outside);
+        }
+    }
+
+    public function testNullBytePathIsBlocked(): void
+    {
+        $this->expectException(SecurityException::class);
+        $this->driver->put("bad\0name.txt", 'blocked');
+    }
 }

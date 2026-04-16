@@ -77,6 +77,23 @@ final class FilesManagerExtendedTest extends TestCase
         unlink($tmp);
     }
 
+    public function testUploadPreserveNameSanitizesPathSegments(): void
+    {
+        $tmp = tempnam(sys_get_temp_dir(), 'ml_');
+        try {
+            file_put_contents($tmp, 'data');
+
+            $manager = new FilesManager(disks: ['local' => new MemoryDriver()]);
+            $file    = new UploadedFile($tmp, '../../unsafe.txt', 'text/plain', 4);
+            $result  = $manager->upload($file, 'docs', options: ['preserve_name' => true]);
+
+            $this->assertTrue($result->success);
+            $this->assertSame('docs/unsafe.txt', $result->file->path);
+        } finally {
+            @unlink($tmp);
+        }
+    }
+
     // ── crossDiskCopy same disk shortcut ─────────────────────────
 
     public function testCrossDiskCopySameDisk(): void

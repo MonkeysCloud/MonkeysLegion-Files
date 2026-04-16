@@ -263,6 +263,8 @@ final class FilesManager
             throw new FileNotFoundException($source);
         }
 
+        $result = false;
+
         try {
             $result = $destDriver->putStream($destination, $stream);
         } finally {
@@ -417,14 +419,27 @@ final class FilesManager
 
     private function generateFilename(string $originalName, array $options): string
     {
+        $safeOriginal = $this->sanitizeClientFilename($originalName);
+
         if ($options['preserve_name'] ?? false) {
-            return $originalName;
+            return $safeOriginal;
         }
 
-        $ext = pathinfo($originalName, PATHINFO_EXTENSION);
+        $ext = pathinfo($safeOriginal, PATHINFO_EXTENSION);
         $id  = bin2hex(random_bytes(16));
 
         return $ext !== '' ? "{$id}.{$ext}" : $id;
+    }
+
+    private function sanitizeClientFilename(string $name): string
+    {
+        $name = str_replace("\0", '', $name);
+        $name = str_replace('\\', '/', $name);
+        $name = basename($name);
+        $name = preg_replace('/[\x01-\x1F\x7F]+/', '', $name) ?? $name;
+        $name = trim($name);
+
+        return ($name !== '' && $name !== '.' && $name !== '..') ? $name : 'file';
     }
 
     /**

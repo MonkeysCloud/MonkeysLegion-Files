@@ -41,11 +41,16 @@ final readonly class PathValidator
         }
 
         $full = rtrim($basePath, '/') . '/' . $path;
+        $normalizedBase = realpath($basePath) ?: rtrim($basePath, '/');
 
         // If parent exists, double-check via realpath
         $parent = realpath(dirname($full));
 
-        if ($parent !== false && !str_starts_with($parent, realpath($basePath) ?: $basePath)) {
+        if (
+            $parent !== false
+            && $parent !== $normalizedBase
+            && !str_starts_with($parent, $normalizedBase . '/')
+        ) {
             throw new SecurityException("Path traversal detected: {$path}");
         }
 

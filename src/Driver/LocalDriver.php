@@ -411,12 +411,17 @@ final class LocalDriver implements StorageInterface
             throw new SecurityException("Path traversal detected: {$path}");
         }
 
+        // Reject null bytes
+        if (str_contains($path, "\0")) {
+            throw new SecurityException("Null byte in path: {$path}");
+        }
+
         $full = $this->resolvedBase . '/' . $path;
 
         // If parent directory exists, verify it's within base
         $parent = realpath(dirname($full));
 
-        if ($parent !== false && !str_starts_with($parent, $this->resolvedBase)) {
+        if ($parent !== false && !$this->isWithinBase($parent)) {
             throw new SecurityException("Path traversal detected: {$path}");
         }
 
@@ -440,11 +445,20 @@ final class LocalDriver implements StorageInterface
     /** Apply POSIX permissions based on visibility. */
     private function applyPermissions(string $fullPath, Visibility $visibility): void
     {
+        $configuredPerms = $this->filePermissions & 0o777;
+        $restrictedPerms = $configuredPerms & 0o700;
+
         $perms = match ($visibility) {
-            Visibility::Public  => 0o644,
-            Visibility::Private => 0o600,
+            Visibility::Public  => $configuredPerms,
+            Visibility::Private => $restrictedPerms,
         };
 
         chmod($fullPath, $perms);
+    }
+
+    private function isWithinBase(string $resolvedPath): bool
+    {
+        return $resolvedPath === $this->resolvedBase
+            || str_starts_with($resolvedPath, $this->resolvedBase . '/');
     }
 }
