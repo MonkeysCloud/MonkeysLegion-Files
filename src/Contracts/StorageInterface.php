@@ -1,177 +1,138 @@
 <?php
-
 declare(strict_types=1);
 
 namespace MonkeysLegion\Files\Contracts;
 
-use Psr\Http\Message\StreamInterface;
+use MonkeysLegion\Files\Visibility;
 
 /**
- * Contract for storage drivers.
- * 
- * All storage implementations (local, S3, etc.) must implement this interface
- * to ensure consistent behavior across different storage backends.
+ * MonkeysLegion Framework — Files Package
+ *
+ * Core contract for all storage drivers. Every implementation (local, S3,
+ * GCS, memory) must satisfy this interface for interchangeable usage.
+ *
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
  */
 interface StorageInterface
 {
+    // ── Write Operations ─────────────────────────────────────────
+
     /**
      * Store a file from string contents.
      *
-     * @param string $path    Relative path within the storage
-     * @param string $contents File contents
-     * @param array  $options  Driver-specific options (visibility, metadata, etc.)
-     * @return bool True on success
+     * @param string               $path     Relative path within the storage
+     * @param string               $contents File contents
+     * @param array<string, mixed> $options  Driver-specific options
      */
     public function put(string $path, string $contents, array $options = []): bool;
 
     /**
-     * Store a file from a stream.
+     * Store a file from a stream resource.
      *
-     * @param string          $path    Relative path within the storage
-     * @param resource|StreamInterface $stream  Input stream
-     * @param array           $options Driver-specific options
-     * @return bool True on success
+     * @param string               $path    Relative path within the storage
+     * @param resource             $stream  Input stream (must be readable)
+     * @param array<string, mixed> $options Driver-specific options
      */
     public function putStream(string $path, mixed $stream, array $options = []): bool;
 
     /**
-     * Get file contents as string.
+     * Append data to an existing file.
+     */
+    public function append(string $path, string $contents): bool;
+
+    /**
+     * Prepend data to an existing file.
+     */
+    public function prepend(string $path, string $contents): bool;
+
+    // ── Read Operations ──────────────────────────────────────────
+
+    /**
+     * Get file contents as a string.
      *
-     * @param string $path Relative path within the storage
-     * @return string|null File contents or null if not found
+     * @return string|null Contents or null if file does not exist
      */
     public function get(string $path): ?string;
 
     /**
      * Get a readable stream for the file.
      *
-     * @param string $path Relative path within the storage
      * @return resource|null Stream resource or null if not found
      */
     public function getStream(string $path): mixed;
 
+    // ── Delete Operations ────────────────────────────────────────
+
     /**
-     * Delete a file.
-     *
-     * @param string $path Relative path within the storage
-     * @return bool True if deleted or didn't exist
+     * Delete a file. Returns true if deleted or already absent.
      */
     public function delete(string $path): bool;
 
-    /**
-     * Delete multiple files.
-     *
-     * @param array<string> $paths Array of paths to delete
-     * @return bool True if all deleted successfully
-     */
-    public function deleteMultiple(array $paths): bool;
+    // ── Metadata ─────────────────────────────────────────────────
 
-    /**
-     * Check if a file exists.
-     *
-     * @param string $path Relative path within the storage
-     * @return bool True if file exists
-     */
+    /** Check if a file exists. */
     public function exists(string $path): bool;
 
-    /**
-     * Get file size in bytes.
-     *
-     * @param string $path Relative path within the storage
-     * @return int|null Size in bytes or null if not found
-     */
+    /** Get file size in bytes. */
     public function size(string $path): ?int;
 
-    /**
-     * Get file MIME type.
-     *
-     * @param string $path Relative path within the storage
-     * @return string|null MIME type or null if not found
-     */
+    /** Get MIME type via content sniffing. */
     public function mimeType(string $path): ?string;
 
-    /**
-     * Get file last modified timestamp.
-     *
-     * @param string $path Relative path within the storage
-     * @return int|null Unix timestamp or null if not found
-     */
+    /** Get last‑modified timestamp. */
     public function lastModified(string $path): ?int;
 
     /**
-     * Copy a file to a new location.
+     * Compute a file checksum.
      *
-     * @param string $source      Source path
-     * @param string $destination Destination path
-     * @return bool True on success
+     * @param string $algo Hash algorithm (sha256, md5, etc.)
      */
+    public function checksum(string $path, string $algo = 'sha256'): ?string;
+
+    // ── Visibility ───────────────────────────────────────────────
+
+    /** Get the file's visibility. */
+    public function visibility(string $path): ?Visibility;
+
+    /** Set the file's visibility. */
+    public function setVisibility(string $path, Visibility $visibility): void;
+
+    // ── Copy / Move ──────────────────────────────────────────────
+
+    /** Copy a file to a new location within the same driver. */
     public function copy(string $source, string $destination): bool;
 
-    /**
-     * Move a file to a new location.
-     *
-     * @param string $source      Source path
-     * @param string $destination Destination path
-     * @return bool True on success
-     */
+    /** Move a file to a new location within the same driver. */
     public function move(string $source, string $destination): bool;
 
-    /**
-     * Generate a public URL for the file.
-     *
-     * @param string $path Relative path within the storage
-     * @return string Public URL
-     */
-    public function url(string $path): string;
+    // ── Directory Operations ─────────────────────────────────────
 
-    /**
-     * Generate a temporary/signed URL for the file.
-     *
-     * @param string             $path       Relative path within the storage
-     * @param \DateTimeInterface $expiration URL expiration time
-     * @param array              $options    Driver-specific options
-     * @return string Signed URL
-     */
-    public function temporaryUrl(string $path, \DateTimeInterface $expiration, array $options = []): string;
+    /** Generate a public URL for the file. */
+    public function url(string $path): string;
 
     /**
      * List files in a directory.
      *
-     * @param string $directory Directory path (empty for root)
-     * @param bool   $recursive Whether to list recursively
-     * @return array<string> Array of file paths
+     * @return list<string>
      */
     public function files(string $directory = '', bool $recursive = false): array;
 
     /**
-     * List directories in a directory.
+     * List subdirectories.
      *
-     * @param string $directory Directory path (empty for root)
-     * @param bool   $recursive Whether to list recursively
-     * @return array<string> Array of directory paths
+     * @return list<string>
      */
     public function directories(string $directory = '', bool $recursive = false): array;
 
-    /**
-     * Create a directory.
-     *
-     * @param string $path Directory path
-     * @return bool True on success
-     */
+    /** Create a directory. */
     public function makeDirectory(string $path): bool;
 
-    /**
-     * Delete a directory.
-     *
-     * @param string $path Directory path
-     * @return bool True on success
-     */
+    /** Delete a directory and its contents. */
     public function deleteDirectory(string $path): bool;
 
-    /**
-     * Get the driver name.
-     *
-     * @return string Driver identifier (e.g., 'local', 's3')
-     */
+    // ── Driver Identity ──────────────────────────────────────────
+
+    /** Return the driver name (e.g. 'local', 's3', 'gcs', 'memory'). */
     public function getDriver(): string;
 }

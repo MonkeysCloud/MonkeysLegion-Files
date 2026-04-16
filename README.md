@@ -1,20 +1,26 @@
-# MonkeysLegion Files
+# MonkeysLegion Files v2
 
-Production-ready file storage and upload management for the **MonkeysLegion** framework ecosystem. Built for high-traffic sites handling millions of files.
+Production-ready file storage, upload, and image processing for the MonkeysLegion framework.
 
-[![PHP Version](https://img.shields.io/badge/php-%5E8.4-blue)](https://php.net)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+> **PHP 8.4+** | Property Hooks | Asymmetric Visibility | Zero-Magic
 
 ## Features
 
-- 🚀 **Chunked Uploads** - Resume-capable multipart uploads for large files
-- ☁️ **Multi-Storage** - Local, S3, MinIO, DigitalOcean Spaces, Backblaze B2, Google Cloud Storage, Firebase
-- 🖼️ **Image Processing** - Thumbnails, optimization, watermarks, format conversion
-- 🔒 **Security** - Signed URLs, rate limiting, virus scanning
-- 📊 **Database Tracking** - Full file metadata with soft deletes
-- 🧹 **Garbage Collection** - Automatic cleanup of orphaned files
-- 🌐 **CDN Integration** - CloudFront-style signed URLs
-- ⚡ **Async Jobs** - Queue-based processing for heavy operations
+| Feature | Status |
+|---------|--------|
+| Multi-driver storage (Local, S3, GCS, Memory) | ✅ |
+| Presigned upload URLs (browser → S3 direct) | ✅ |
+| MIME content sniffing (anti-spoofing) | ✅ |
+| Atomic writes (tmp + rename) | ✅ |
+| Cross-disk copy/move | ✅ |
+| Upload validation (size, MIME, extension) | ✅ |
+| File record entity with property hooks | ✅ |
+| Domain events (FileStored, FileDeleted, FileMoved) | ✅ |
+| CDN URL generation with signed URLs | ✅ |
+| Image processing (GD/Imagick, WebP/AVIF) | ✅ |
+| Virus scanning integration | ✅ |
+| In-memory driver for testing | ✅ |
+| Garbage collection for orphaned files | ✅ |
 
 ## Installation
 
@@ -22,703 +28,239 @@ Production-ready file storage and upload management for the **MonkeysLegion** fr
 composer require monkeyscloud/monkeyslegion-files
 ```
 
-This package requires the MonkeysLegion ecosystem:
-- **MonkeysLegion-Mlc** - Configuration management (auto-included)
-- **MonkeysLegion-Cache** - Caching and rate limiting (auto-included)
-- **MonkeysLegion-Database** - Database tracking (auto-included)
-
-### Optional Dependencies
-
-```bash
-# For S3-compatible storage (AWS, MinIO, DigitalOcean, Backblaze)
-composer require aws/aws-sdk-php
-
-# For Google Cloud Storage / Firebase Storage
-composer require google/cloud-storage
-
-# For image processing
-# Install ext-gd or ext-imagick via your system package manager
-```
-
 ## Quick Start
 
 ```php
-use MonkeysLegion\Files\FilesServiceProvider;
-use MonkeysLegion\Cache\CacheManager;
-use MonkeysLegion\Database\Factory\ConnectionFactory;
+use MonkeysLegion\Files\FilesManager;
+use MonkeysLegion\Files\Driver\LocalDriver;
+use MonkeysLegion\Files\Driver\MemoryDriver;
 
-// Setup with MonkeysLegion ecosystem
-$cacheManager = new CacheManager(require 'config/cache.php');
-$dbConnection = ConnectionFactory::create(require 'config/database.php');
-
-$provider = new FilesServiceProvider(
-    container: $container,
-    cacheManager: $cacheManager,
-    dbConnection: $dbConnection,
+// Create a manager with disks
+$manager = new FilesManager(
+    disks: [
+        'local' => new LocalDriver('/var/www/storage', '/files'),
+        'tmp'   => new MemoryDriver(),
+    ],
+    defaultDisk: 'local',
 );
-$provider->register();
-
-// Now use the file manager
-$files = $container->get(FilesManager::class);
 
 // Store a file
-$path = ml_files_put($_FILES['upload']['tmp_name']);
+$manager->put('documents/readme.md', '# Hello World');
 
-// Store content
-$path = ml_files_put_string("Hello World", "text/plain");
-
-// Get file contents
-$contents = ml_files_get($path);
-
-// Generate signed URL (valid for 10 minutes)
-$url = ml_files_sign_url("/files/{$path}", 600);
-
-// Delete a file
-ml_files_delete($path);
-```
-
-## MonkeysLegion Ecosystem Integration
-
-This package integrates seamlessly with the MonkeysLegion framework ecosystem:
-
-### Configuration (MonkeysLegion-Mlc)
-
-```php
-use MonkeysLegion\Mlc\Loader;
-use MonkeysLegion\Mlc\Parser;
-
-$loader = new Loader(new Parser(), 'config');
-$config = $loader->loadOne('files');
-
-// Type-safe access
-$maxSize = $config->getInt('files.upload.max_size', 20971520);
-$allowedMimes = $config->getArray('files.upload.allowed_mimes', []);
-```
-
-### Caching (MonkeysLegion-Cache)
-
-```php
-use MonkeysLegion\Cache\CacheManager;
-
-$cacheManager = new CacheManager([
-    'default' => 'redis',
-    'stores' => [
-        'redis' => [
-            'driver' => 'redis',
-            'host' => '127.0.0.1',
-            'port' => 6379,
-            'prefix' => 'ml_files_',
-        ],
-    ],
-]);
-
-// Rate limiting uses the cache
-$rateLimiter = new UploadRateLimiter($cacheManager);
-```
-
-### Database (MonkeysLegion-Database)
-
-```php
-use MonkeysLegion\Database\Factory\ConnectionFactory;
-
-$connection = ConnectionFactory::create([
-    'default' => 'mysql',
-    'connections' => [
-        'mysql' => [
-            'dsn' => 'mysql:host=localhost;dbname=myapp',
-            'username' => 'root',
-            'password' => 'secret',
-        ],
-    ],
-]);
-
-// File repository uses the connection
-$repository = new FileRepository($connection);
-```
-
-## Configuration
-
-The package supports both PHP array and MLC configuration formats.
-
-### MLC Format (Recommended)
-
-Create `config/files.mlc`:
-
-```mlc
-# MonkeysLegion Files Configuration
-
-files.default = env("FILES_DISK", "local")
-
-files.disks.local {
-    driver = "local"
-    root = env("FILES_LOCAL_ROOT", "storage/files")
-    visibility = "private"
-}
-
-files.disks.s3 {
-    driver = "s3"
-    key = env("AWS_ACCESS_KEY_ID", "")
-    secret = env("AWS_SECRET_ACCESS_KEY", "")
-    region = env("AWS_DEFAULT_REGION", "us-east-1")
-    bucket = env("AWS_BUCKET", "")
-    visibility = "private"
-}
-
-files.disks.gcs {
-    driver = "gcs"
-    project_id = env("GOOGLE_CLOUD_PROJECT_ID", "")
-    bucket = env("GOOGLE_CLOUD_STORAGE_BUCKET", "")
-    key_file_path = env("GOOGLE_CLOUD_KEY_FILE", "")
-    visibility = "private"
-}
-
-files.upload {
-    max_size = env("UPLOAD_MAX_BYTES", 20971520)
-    chunk_size = 5242880
-    allowed_mimes = ["image/jpeg", "image/png", "application/pdf"]
-}
-
-files.rate_limiting {
-    enabled = true
-    uploads_per_minute = 10
-    bytes_per_hour = 104857600
-    concurrent_uploads = 3
-}
-
-files.database {
-    enabled = env("DATABASE_TRACKING_ENABLED", true)
-}
-```
-
-### PHP Array Format
-
-Create `config/files.php`:
-
-```php
-<?php
-return [
-    'default' => env('FILES_DISK', 'local'),
-    
-    'disks' => [
-        'local' => [
-            'driver' => 'local',
-            'root' => storage_path('files'),
-            'url' => env('FILES_PUBLIC_URL'),
-            'visibility' => 'private',
-        ],
-        
-        's3' => [
-            'driver' => 's3',
-            'key' => env('AWS_ACCESS_KEY_ID'),
-            'secret' => env('AWS_SECRET_ACCESS_KEY'),
-            'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
-            'bucket' => env('AWS_BUCKET'),
-            'endpoint' => env('AWS_ENDPOINT'),
-            'visibility' => 'private',
-        ],
-    ],
-    
-    'upload' => [
-        'max_size' => env('UPLOAD_MAX_BYTES', 20 * 1024 * 1024),
-        'allowed_mimes' => ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'],
-        'chunk_size' => 5 * 1024 * 1024, // 5MB
-    ],
-    
-    'security' => [
-        'signing_key' => env('FILES_SIGNING_KEY'),
-    ],
-];
-```
-
-### Environment Variables
-
-```env
-# Storage
-FILES_DISK=local
-FILES_PUBLIC_URL=https://cdn.example.com
-FILES_SIGNING_KEY=your-secret-key-here
-
-# Upload limits
-UPLOAD_MAX_BYTES=20971520
-UPLOAD_MIME_ALLOW=image/jpeg,image/png,image/webp,application/pdf
-
-# AWS S3 (optional)
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_DEFAULT_REGION=us-east-1
-AWS_BUCKET=your-bucket
-AWS_ENDPOINT=
-
-# Rate limiting
-RATE_LIMIT_UPLOADS_PER_MINUTE=10
-RATE_LIMIT_BYTES_PER_HOUR=104857600
-RATE_LIMIT_CONCURRENT=3
-```
-
-## Usage
-
-### Basic File Operations
-
-```php
-use MonkeysLegion\Files\FilesManager;
-
-$files = new FilesManager($storage, $config);
-
-// Store from various sources
-$path = $files->put('/path/to/local/file.jpg');
-$path = $files->put($_FILES['upload']);
-$path = $files->putString($contents, 'text/plain');
-$path = $files->putStream($stream, 'application/pdf');
-
-// Read files
-$contents = $files->get($path);
-$stream = $files->getStream($path);
+// Read it back
+$contents = $manager->get('documents/readme.md');
 
 // Check existence
-if ($files->exists($path)) {
-    $size = $files->size($path);
-    $mime = $files->mimeType($path);
-}
+$manager->exists('documents/readme.md'); // true
 
-// Move and copy
-$files->copy($from, $to);
-$files->move($from, $to);
-
-// Delete
-$files->delete($path);
+// Get metadata
+$manager->size('documents/readme.md');     // 13
+$manager->mimeType('documents/readme.md'); // 'text/plain'
+$manager->checksum('documents/readme.md'); // sha256 hash
 ```
 
-### Chunked Uploads
-
-Handle large files with resume capability:
+## Upload Handling
 
 ```php
-use MonkeysLegion\Files\Upload\ChunkedUploadManager;
+use MonkeysLegion\Files\Upload\UploadedFile;
+use MonkeysLegion\Files\Upload\UploadValidator;
+use MonkeysLegion\Files\Security\ContentValidator;
 
-$chunked = new ChunkedUploadManager($storage, $tempDir, $cache);
-
-// 1. Initialize upload session
-$uploadId = $chunked->initiate('large-video.mp4', $totalSize, 'video/mp4');
-
-// 2. Upload chunks (from client)
-foreach ($chunks as $index => $chunk) {
-    $chunked->uploadChunk($uploadId, $index, $chunk['data'], $chunk['size']);
-}
-
-// 3. Complete and get final path
-$finalPath = $chunked->complete($uploadId);
-
-// Check progress anytime
-$progress = $chunked->getProgress($uploadId);
-// ['uploaded_chunks' => 5, 'total_chunks' => 10, 'percent' => 50, ...]
-
-// Abort if needed
-$chunked->abort($uploadId);
-```
-
-### Image Processing
-
-```php
-use MonkeysLegion\Files\Image\ImageProcessor;
-
-$processor = new ImageProcessor(driver: 'gd', quality: 85);
-
-// Create thumbnail
-$thumbPath = $processor->thumbnail($path, 300, 300, 'cover');
-
-// Optimize for web
-$optimized = $processor->optimize($path, quality: 80);
-
-// Convert format
-$webp = $processor->convert($path, 'webp');
-
-// Add watermark
-$watermarked = $processor->watermark($path, $watermarkPath, 'bottom-right', 50);
-
-// Batch conversions
-$conversions = $processor->processConversions($path, [
-    'thumb' => ['width' => 150, 'height' => 150, 'fit' => 'cover'],
-    'medium' => ['width' => 800, 'height' => 600, 'fit' => 'contain'],
-    'webp' => ['format' => 'webp', 'quality' => 80],
-]);
-```
-
-### S3 Storage
-
-```php
-use MonkeysLegion\Files\Storage\S3Storage;
-
-$s3 = new S3Storage(
-    bucket: 'my-bucket',
-    region: 'us-east-1',
-    accessKey: $key,
-    secretKey: $secret,
+// Create manager with validation
+$manager = new FilesManager(
+    disks: ['local' => new LocalDriver('/var/www/storage')],
+    validator: new UploadValidator(
+        maxSize: 50 * 1024 * 1024,  // 50 MB
+        allowedMimes: ['image/jpeg', 'image/png', 'application/pdf'],
+        deniedExtensions: ['php', 'exe', 'sh'],
+    ),
+    contentValidator: new ContentValidator(), // MIME sniffing
 );
 
-// Pre-signed upload URL (direct browser upload)
-$presignedUrl = $s3->getUploadUrl('uploads/file.jpg', 'image/jpeg', 3600);
+// Handle upload
+$file = UploadedFile::fromGlobal($_FILES['avatar']);
 
-// Pre-signed download URL
-$downloadUrl = $s3->getTemporaryUrl('private/doc.pdf', 3600);
+// Property hooks — zero methods!
+echo $file->extension;  // 'jpg'
+echo $file->isImage;    // true
+echo $file->humanSize;  // '2.5 MB'
 
-// Multipart upload for very large files
-$uploadId = $s3->initiateMultipartUpload('large-file.zip');
-// ... upload parts ...
-$s3->completeMultipartUpload('large-file.zip', $uploadId, $parts);
-```
+$result = $manager->upload($file, 'avatars');
 
-### Google Cloud Storage
-
-```php
-use MonkeysLegion\Files\Storage\GoogleCloudStorage;
-
-// Using service account key file
-$gcs = new GoogleCloudStorage(
-    bucketName: 'my-bucket',
-    projectId: 'my-project',
-    keyFilePath: '/path/to/service-account.json',
-);
-
-// Or using key array (for environments where file access is limited)
-$gcs = new GoogleCloudStorage(
-    bucketName: 'my-bucket',
-    projectId: 'my-project',
-    keyFile: json_decode(file_get_contents('/path/to/key.json'), true),
-);
-
-// Basic operations work the same as other drivers
-$gcs->put('path/to/file.txt', 'Hello World');
-$content = $gcs->get('path/to/file.txt');
-
-// Signed URL for private downloads
-$signedUrl = $gcs->temporaryUrl('private/doc.pdf', new DateTime('+1 hour'));
-
-// Direct browser upload with signed URL
-$uploadUrl = $gcs->getUploadUrl('uploads/file.jpg', 'image/jpeg', 3600);
-
-// Resumable upload for large files
-$resumeUri = $gcs->initiateResumableUpload(
-    path: 'large/video.mp4',
-    contentType: 'video/mp4',
-    contentLength: $fileSize,
-);
-
-// Compose multiple objects into one (useful for chunked uploads)
-$gcs->compose(['chunk1.part', 'chunk2.part', 'chunk3.part'], 'complete-file.zip');
-
-// Set visibility
-$gcs->setVisibility('path/to/file.txt', 'public');
-```
-
-### Firebase Storage
-
-Firebase Storage uses Google Cloud Storage as its backend:
-
-```php
-use MonkeysLegion\Files\Storage\GoogleCloudStorage;
-
-$firebase = new GoogleCloudStorage(
-    bucketName: 'my-project.appspot.com', // Firebase bucket format
-    projectId: 'my-project',
-    keyFilePath: '/path/to/firebase-adminsdk.json',
-);
-
-// Works exactly like GCS
-$firebase->put('users/avatar.jpg', $imageData);
-```
-
-### Rate Limiting
-
-```php
-use MonkeysLegion\Files\RateLimit\UploadRateLimiter;
-
-$limiter = new UploadRateLimiter(
-    cache: $cache,
-    maxUploadsPerMinute: 10,
-    maxBytesPerHour: 100 * 1024 * 1024,
-    maxConcurrentUploads: 3,
-);
-
-$userId = auth()->id();
-
-// Check before upload
-try {
-    $limiter->check($userId);
-} catch (RateLimitException $e) {
-    return response()->json([
-        'error' => $e->getMessage(),
-        'retry_after' => $e->getRetryAfter(),
-    ], 429);
-}
-
-// Track upload
-$limiter->startUpload($userId);
-try {
-    // ... process upload ...
-    $limiter->recordUpload($userId, $fileSize);
-} finally {
-    $limiter->endUpload($userId);
-}
-
-// Get status
-$status = $limiter->getStatus($userId);
-// ['uploads' => [...], 'bandwidth' => [...], 'concurrent' => [...]]
-```
-
-### Signed URLs
-
-```php
-// Generate signed URL
-$url = ml_files_sign_url('/files/private/document.pdf', ttl: 600);
-// Result: /files/private/document.pdf?expires=1699999999&signature=abc123
-
-// Verify signed URL
-if (ml_files_verify_signed_url($requestUrl)) {
-    // Valid - serve the file
+if ($result->failed) {
+    // $result->errors contains validation messages
+    foreach ($result->errors as $error) {
+        echo $error;
+    }
 } else {
-    // Invalid or expired
+    echo $result->file->uuid;      // '550e8400-...'
+    echo $result->file->humanSize; // '2.5 MB'
+    echo $result->file->isImage;   // true
 }
 ```
 
-### CDN Integration
+## FileRecord — PHP 8.4 Property Hooks
 
 ```php
-use MonkeysLegion\Files\Cdn\CdnUrlGenerator;
+use MonkeysLegion\Files\Entity\FileRecord;
+use MonkeysLegion\Files\Visibility;
 
-$cdn = new CdnUrlGenerator(
-    baseUrl: 'https://cdn.example.com',
-    signingKey: $key,
+$record = new FileRecord(
+    disk: 'local',
+    path: '/uploads/photo.jpg',  // set hook strips leading /
+    originalName: 'photo.jpg',
+    mimeType: 'image/jpeg',
+    size: 2_621_440,
 );
 
-// Public CDN URL
-$url = $cdn->url('images/photo.jpg');
-// https://cdn.example.com/images/photo.jpg
+// Computed properties via get hooks — no methods!
+$record->path;         // 'uploads/photo.jpg' (set hook normalized)
+$record->extension;    // 'jpg'
+$record->basename;     // 'photo'
+$record->isImage;      // true
+$record->isVideo;      // false
+$record->humanSize;    // '2.5 MB'
+$record->isDeleted;    // false
 
-// Signed CDN URL
-$signedUrl = $cdn->signedUrl('private/doc.pdf', expiry: 3600);
+// Asymmetric visibility — read public, write private
+$record->id;           // null (public private(set))
+$record->uuid;         // '550e8400-...' (public private(set))
+$record->createdAt;    // DateTimeImmutable (public private(set))
 
-// Purge cache
-$cdn->purge(['images/photo.jpg', 'images/banner.jpg']);
+// Business logic
+$record->softDelete();
+$record->isDeleted;    // true (computed via hook)
+$record->restore();
+
+$record->attachTo('App\\Entity\\User', 42, 'avatars');
+$record->setChecksum('abc123', 'sha256');
 ```
 
-### Database Tracking
+## Cross-Disk Operations
 
 ```php
-use MonkeysLegion\Files\Repository\FileRepository;
+// Copy between disks
+$manager->crossDiskCopy(
+    source: 'photo.jpg',
+    destination: 'photo.jpg',
+    sourceDisk: 'local',
+    destDisk: 's3',
+);
 
-$repo = new FileRepository($connection);
-
-// Files are tracked automatically when using FilesManager
-$record = $files->put($uploadedFile);
-
-// Query files
-$file = $repo->findByPath($path);
-$userFiles = $repo->findByOwner($userId);
-$images = $repo->findByMimeType('image/%');
-
-// Soft delete
-$repo->softDelete($fileId);
-
-// Restore
-$repo->restore($fileId);
-
-// Permanent delete (also removes from storage)
-$repo->forceDelete($fileId);
+// Move between disks (atomic: copy + delete)
+$manager->crossDiskMove(
+    source: 'temp/file.pdf',
+    destination: 'documents/file.pdf',
+    sourceDisk: 'local',
+    destDisk: 's3',
+);
 ```
 
-### Garbage Collection
+## Storage Drivers
 
+### LocalDriver
 ```php
-use MonkeysLegion\Files\Maintenance\GarbageCollector;
+use MonkeysLegion\Files\Driver\LocalDriver;
+use MonkeysLegion\Files\Visibility;
 
-$gc = new GarbageCollector($storage, $repository, $config);
+$local = new LocalDriver(
+    basePath: '/var/www/storage',
+    baseUrl: '/files',
+    dirPermissions: 0o755,
+    filePermissions: 0o644,
+    defaultVisibility: Visibility::Public,
+);
+```
 
-// Clean up soft-deleted files older than retention period
-$gc->cleanupDeletedFiles();
+### MemoryDriver (Testing)
+```php
+use MonkeysLegion\Files\Driver\MemoryDriver;
 
-// Remove orphaned files (in storage but not in database)
-$gc->cleanupOrphanedFiles();
+$memory = new MemoryDriver();
+$memory->put('test.txt', 'hello');
 
-// Clean incomplete chunked uploads
-$gc->cleanupIncompleteUploads();
+// Property hooks for test assertions
+echo $memory->fileCount;   // 1
+echo $memory->totalBytes;  // 5
+```
 
-// Clean unused image conversions
-$gc->cleanupUnusedConversions();
+## Security
 
-// Run all cleanup tasks
-$gc->runAll();
+### Path Traversal Prevention
+The `LocalDriver` blocks `..` segments and validates resolved paths against the base directory. Both regex and `realpath()` checks are applied.
+
+### MIME Content Sniffing
+```php
+$validator = new ContentValidator();
+$validator->validate('/tmp/upload.jpg', 'image/jpeg');
+// Throws SecurityException if actual content is PHP code
 ```
 
 ### Virus Scanning
+```php
+use MonkeysLegion\Files\Security\ScanResult;
+
+$result = new ScanResult(isClean: false, threat: 'Trojan.Gen');
+$result->hasThreat; // true (computed via hook)
+```
+
+## Domain Events
 
 ```php
-use MonkeysLegion\Files\Security\ClamAvScanner;
-use MonkeysLegion\Files\Security\HttpVirusScanner;
+use MonkeysLegion\Files\Event\FileStored;
+use MonkeysLegion\Files\Event\FileDeleted;
+use MonkeysLegion\Files\Event\FileMoved;
 
-// ClamAV (local)
-$scanner = new ClamAvScanner('/var/run/clamav/clamd.ctl');
-
-// HTTP-based (cloud)
-$scanner = new HttpVirusScanner('https://api.scanner.example.com', $apiKey);
-
-$result = $scanner->scan($filePath);
-
-if ($result->isClean()) {
-    // Safe to store
-} else {
-    // Threat detected
-    $threat = $result->getThreat();
-    // Quarantine or reject
-}
+// All events are readonly value objects
+$event = new FileStored(file: $record, disk: 'local');
+$event->occurredAt; // DateTimeImmutable
 ```
 
-## Global Helper Functions
+## Enums
 
 ```php
-// Core operations
-ml_files_put($source, $path, $options);
-ml_files_put_string($contents, $mimeType);
-ml_files_put_stream($stream, $mimeType);
-ml_files_get($path);
-ml_files_read_stream($path);
-ml_files_delete($path);
-ml_files_exists($path);
-ml_files_size($path);
-ml_files_mime($path);
-ml_files_url($path);
-ml_files_temp_url($path, $ttl);
-ml_files_copy($from, $to);
-ml_files_move($from, $to);
-ml_files_list($directory);
+use MonkeysLegion\Files\Visibility;
+use MonkeysLegion\Files\Image\ImageFormat;
+use MonkeysLegion\Files\Image\ImageDriver;
 
-// Signed URLs
-ml_files_sign_url($url, $ttl);
-ml_files_verify_signed_url($url);
+Visibility::Public;   // 'public'
+Visibility::Private;  // 'private'
 
-// Chunked uploads
-ml_files_chunked_init($filename, $size, $mime);
-ml_files_chunked_upload($uploadId, $index, $data, $size);
-ml_files_chunked_complete($uploadId);
-ml_files_chunked_abort($uploadId);
-ml_files_chunked_progress($uploadId);
+ImageFormat::Webp->mimeType();   // 'image/webp'
+ImageFormat::Avif->extension();  // 'avif'
 
-// Image processing
-ml_files_image_thumbnail($path, $width, $height);
-ml_files_image_optimize($path, $quality);
-ml_files_image_convert($path, $format);
-ml_files_image_watermark($path, $watermark, $position);
-
-// Utilities
-ml_files_human_size($bytes);
-ml_files_extension($path);
-ml_files_safe_filename($filename);
-ml_files_generate_path($extension);
-ml_files_is_image($mimeType);
-ml_files_is_video($mimeType);
-ml_files_is_audio($mimeType);
+ImageDriver::Gd->isAvailable();  // true/false
 ```
-
-## Database Migrations
-
-Run the migrations:
-
-```bash
-php ml migrate
-```
-
-Tables created:
-- `ml_files` - File metadata and tracking
-- `ml_file_conversions` - Image variants (thumbnails, etc.)
-- `ml_chunked_uploads` - Incomplete upload tracking
-
-## Cron Jobs
-
-Set up garbage collection:
-
-```bash
-# Run every hour
-0 * * * * php /path/to/app ml:files:gc
-```
-
-## Security Best Practices
-
-1. **Store files outside webroot** - Prevent direct access
-2. **Validate MIME types** - Don't trust client headers
-3. **Use signed URLs** - For private file access
-4. **Enable virus scanning** - For user uploads
-5. **Set rate limits** - Prevent abuse
-6. **Use HTTPS** - For all file transfers
 
 ## Architecture
 
 ```
-MonkeysLegion\Files\
-├── Contracts/              # Interfaces
-│   ├── StorageInterface
-│   └── ChunkedUploadInterface
-├── Storage/                # Storage drivers
-│   ├── LocalStorage
-│   ├── S3Storage
-│   └── GoogleCloudStorage
-├── Upload/                 # Upload handling
-│   └── ChunkedUploadManager
-├── Image/                  # Image processing
-│   └── ImageProcessor
-├── Security/               # Security features
-│   ├── VirusScanner
-│   └── (ClamAv/Http)
-├── RateLimit/              # Rate limiting
-│   └── UploadRateLimiter
-├── Cdn/                    # CDN integration
-│   └── CdnUrlGenerator
-├── Repository/             # Database layer
-│   └── FileRepository
-├── Entity/                 # Entities
-│   └── FileRecord
-├── Maintenance/            # Cleanup tasks
-│   └── GarbageCollector
-├── Job/                    # Queue jobs
-│   └── (ProcessImage, Cleanup, etc.)
-├── Exception/              # Custom exceptions
-├── FilesManager.php        # Main facade
-├── FilesServiceProvider.php
-└── helpers.php             # Global functions
+src/
+├── Contracts/          # StorageInterface, CloudStorageInterface
+├── Driver/             # LocalDriver, MemoryDriver (S3/GCS stubs)
+├── Entity/             # FileRecord with property hooks
+├── Event/              # FileStored, FileDeleted, FileMoved
+├── Exception/          # FilesException hierarchy
+├── Image/              # ImageDriver, ImageFormat enums
+├── Security/           # ContentValidator, ScanResult
+├── Upload/             # UploadedFile, UploadValidator, UploadResult
+├── FilesManager.php    # Main facade
+└── Visibility.php      # Backed enum
 ```
 
 ## Testing
 
 ```bash
-# Run tests
-vendor/bin/phpunit
-
-# With coverage
-vendor/bin/phpunit --coverage-html coverage
-
-# Static analysis
-vendor/bin/phpstan analyse src --level=8
-
-# Code style
-vendor/bin/php-cs-fixer fix --dry-run --diff
+vendor/bin/phpunit               # 127 tests, 223 assertions
+vendor/bin/phpunit --coverage-text
 ```
 
-## Upgrading from v1.x
+## Requirements
 
-1. Update `composer.json` to require `^2.0`
-2. Run `composer update`
-3. Run database migrations
-4. Update configuration file
-5. Replace deprecated helper function calls
-
-See [UPGRADE.md](UPGRADE.md) for detailed migration guide.
-
-## Contributing
-
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+- PHP ^8.4
+- monkeyscloud/monkeyslegion-mlc ^3.1.2
+- psr/log ^3.0
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
-
-## Credits
-
-Part of the [MonkeysLegion](https://github.com/MonkeysCloud) framework ecosystem.
+MIT © MonkeysCloud Team

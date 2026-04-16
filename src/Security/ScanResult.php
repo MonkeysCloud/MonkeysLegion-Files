@@ -1,35 +1,40 @@
 <?php
-
 declare(strict_types=1);
 
 namespace MonkeysLegion\Files\Security;
 
 /**
- * Result of a virus scan.
+ * MonkeysLegion Framework — Files Package
+ *
+ * Immutable virus scan result value object.
+ *
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
  */
-class ScanResult
+final class ScanResult
 {
+    public bool $hasThreat {
+        get => !$this->isClean;
+    }
+
     public function __construct(
         public readonly bool $isClean,
         public readonly ?string $threat = null,
         public readonly string $scanner = 'unknown',
         public readonly float $scanTime = 0.0,
-        public readonly array $metadata = []
+        /** @var array<string, mixed> */
+        public readonly array $metadata = [],
     ) {}
 
-    public function hasThreat(): bool
-    {
-        return !$this->isClean;
-    }
-
+    /** @return array<string, mixed> */
     public function toArray(): array
     {
         return [
-            'is_clean' => $this->isClean,
-            'threat' => $this->threat,
-            'scanner' => $this->scanner,
+            'is_clean'  => $this->isClean,
+            'threat'    => $this->threat,
+            'scanner'   => $this->scanner,
             'scan_time' => $this->scanTime,
-            'metadata' => $this->metadata,
+            'metadata'  => $this->metadata,
         ];
     }
 }

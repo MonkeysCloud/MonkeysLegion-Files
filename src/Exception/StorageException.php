@@ -1,10 +1,12 @@
 <?php
-
 declare(strict_types=1);
 
 namespace MonkeysLegion\Files\Exception;
 
 /**
- * Storage operation failures (read, write, delete).
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
  */
-class StorageException extends FilesException {}
+final class StorageException extends FilesException
+{
+}

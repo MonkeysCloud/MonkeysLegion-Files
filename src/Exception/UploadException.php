@@ -1,10 +1,12 @@
 <?php
-
 declare(strict_types=1);
 
 namespace MonkeysLegion\Files\Exception;
 
 /**
- * Base exception for upload-related errors.
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
  */
-class UploadException extends FilesException {}
+final class UploadException extends FilesException
+{
+}

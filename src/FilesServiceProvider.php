@@ -1,538 +1,165 @@
 <?php
-
 declare(strict_types=1);
 
 namespace MonkeysLegion\Files;
 
-use MonkeysLegion\Cache\CacheManager;
-use MonkeysLegion\Database\Factory\ConnectionFactory;
-use MonkeysLegion\Mlc\Config;
-use MonkeysLegion\Mlc\Loader;
-use MonkeysLegion\Mlc\Parser;
-use MonkeysLegion\Files\Cdn\CdnUrlGenerator;
-use MonkeysLegion\Files\Contracts\ChunkedUploadInterface;
+use MonkeysLegion\Files\Attributes\Disk;
+use MonkeysLegion\Files\Attributes\StorageConfig;
 use MonkeysLegion\Files\Contracts\StorageInterface;
-use MonkeysLegion\Files\Image\ImageProcessor;
-use MonkeysLegion\Files\Maintenance\GarbageCollector;
-use MonkeysLegion\Files\RateLimit\UploadRateLimiter;
-use MonkeysLegion\Files\Repository\FileRepository;
-use MonkeysLegion\Files\Security\ClamAvScanner;
-use MonkeysLegion\Files\Security\HttpVirusScanner;
-use MonkeysLegion\Files\Security\VirusScannerInterface;
-use MonkeysLegion\Files\Storage\GoogleCloudStorage;
-use MonkeysLegion\Files\Storage\LocalStorage;
-use MonkeysLegion\Files\Storage\S3Storage;
-use MonkeysLegion\Files\Upload\ChunkedUploadManager;
+use MonkeysLegion\Files\Driver\AzureBlobDriver;
+use MonkeysLegion\Files\Driver\GcsDriver;
+use MonkeysLegion\Files\Driver\LocalDriver;
+use MonkeysLegion\Files\Driver\MemoryDriver;
+use MonkeysLegion\Files\Driver\S3Driver;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
 /**
- * Service provider for MonkeysLegion-Files package.
- * 
- * Integrates with:
- * - MonkeysLegion-Mlc for configuration
- * - MonkeysLegion-Cache for caching and rate limiting
- * - MonkeysLegion-Database for file tracking
+ * MonkeysLegion Framework — Files Package
+ *
+ * Attribute-driven service provider. Scans for classes annotated with
+ * #[StorageConfig] and #[Disk] to auto-register storage drivers and
+ * build the FilesManager instance.
+ *
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
  */
 final class FilesServiceProvider
 {
-    private Config $config;
-    private CacheManager $cacheManager;
-    private ?object $dbConnection = null;
-    private array $disks = [];
-    private ?LoggerInterface $logger = null;
+    /** Known driver factories. */
+    private const array DRIVERS = [
+        'local'  => LocalDriver::class,
+        's3'     => S3Driver::class,
+        'gcs'    => GcsDriver::class,
+        'azure'  => AzureBlobDriver::class,
+        'memory' => MemoryDriver::class,
+    ];
 
     /**
-     * @param object $container PSR-11 compatible container
-     * @param Config|array|null $config Configuration (Config object or array)
-     * @param CacheManager|null $cacheManager Cache manager instance
-     * @param object|null $dbConnection Database connection
-     * @param LoggerInterface|null $logger Logger instance
+     * Build a FilesManager from a configuration array.
+     *
+     * @param array<string, array<string, mixed>> $disks       Disk configs keyed by name
+     * @param string                              $defaultDisk Default disk name
+     * @param LoggerInterface                     $logger      PSR logger
      */
-    public function __construct(
-        private object $container,
-        Config|array|null $config = null,
-        ?CacheManager $cacheManager = null,
-        ?object $dbConnection = null,
+    public static function create(
+        array $disks,
+        string $defaultDisk = 'local',
         ?LoggerInterface $logger = null,
-    ) {
-        $this->config = $this->resolveConfig($config);
-        $this->cacheManager = $cacheManager ?? $this->resolveCacheManager();
-        $this->dbConnection = $dbConnection;
-        $this->logger = $logger ?? new NullLogger();
-    }
+    ): FilesManager {
+        $drivers = [];
 
-    /**
-     * Register all services into the container.
-     */
-    public function register(): void
-    {
-        $this->registerStorageDrivers();
-        $this->registerCoreServices();
-        $this->registerOptionalServices();
-    }
-
-    /**
-     * Boot the service provider.
-     */
-    public function boot(): void
-    {
-        // Initialize any services that need early setup
-    }
-
-    /**
-     * Get the configuration.
-     */
-    public function getConfig(): Config
-    {
-        return $this->config;
-    }
-
-    /**
-     * Get a storage disk by name.
-     */
-    public function disk(?string $name = null): StorageInterface
-    {
-        $name ??= $this->config->getString('files.default', 'local');
-
-        if (!isset($this->disks[$name])) {
-            $this->disks[$name] = $this->createStorage($name);
+        foreach ($disks as $name => $config) {
+            $drivers[$name] = self::buildDriver($config);
         }
 
-        return $this->disks[$name];
-    }
-
-    /**
-     * Get the cache manager.
-     */
-    public function getCacheManager(): CacheManager
-    {
-        return $this->cacheManager;
-    }
-
-    /**
-     * Get the database connection.
-     */
-    public function getDbConnection(): ?object
-    {
-        return $this->dbConnection;
-    }
-
-    /**
-     * Register storage drivers for all configured disks.
-     */
-    private function registerStorageDrivers(): void
-    {
-        // Register the default storage interface
-        $this->bind(StorageInterface::class, fn() => $this->disk());
-
-        // Register individual disks from config
-        $disksConfig = $this->config->get('files.disks', []);
-        
-        if (is_array($disksConfig)) {
-            foreach (array_keys($disksConfig) as $diskName) {
-                $this->bind(
-                    "files.disk.{$diskName}",
-                    fn() => $this->disk($diskName)
-                );
-            }
-        }
-    }
-
-    /**
-     * Register core file management services.
-     */
-    private function registerCoreServices(): void
-    {
-        // Files Manager (main facade)
-        $this->singleton(FilesManager::class, function () {
-            $manager = new FilesManager(
-                $this->config->all(), // Pass full config array
-                $this->logger
-            );
-
-            $manager->setCache($this->cacheManager->store());
-
-            if ($this->config->getBool('files.database.enabled', false)) {
-                $manager->setRepository($this->resolve(FileRepository::class));
-            }
-            
-            return $manager;
-        });
-
-        // Chunked Upload Manager
-        $this->singleton(ChunkedUploadInterface::class, function () {
-            return new ChunkedUploadManager(
-                storage: $this->disk(),
-                tempDir: $this->config->getString('files.upload.temp_dir', sys_get_temp_dir() . '/ml-uploads'),
-                cache: $this->cacheManager->store(),
-                chunkSize: $this->config->getInt('files.upload.chunk_size', 5 * 1024 * 1024),
-                uploadExpiry: $this->config->getInt('files.upload.chunk_expiry', 86400),
-            );
-        });
-
-        // Alias for ChunkedUploadManager
-        $this->singleton(ChunkedUploadManager::class, function () {
-            return $this->resolve(ChunkedUploadInterface::class);
-        });
-
-        // File Repository (database tracking)
-        if ($this->config->getBool('files.database.enabled', false)) {
-            $this->singleton(FileRepository::class, function () {
-                $connection = $this->dbConnection ?? $this->resolveDbConnection();
-                
-                return new FileRepository(
-                    connection: $connection,
-                    tableName: $this->config->getString('files.database.tables.files', 'ml_files'),
-                    conversionsTable: $this->config->getString('files.database.tables.conversions', 'ml_file_conversions'),
-                    trackAccess: $this->config->getBool('files.database.track_access', true),
-                    softDelete: $this->config->getBool('files.database.soft_delete', true),
-                );
-            });
-        }
-
-        // Rate Limiter
-        if ($this->config->getBool('files.rate_limiting.enabled', true)) {
-            $this->singleton(UploadRateLimiter::class, function () {
-                return new UploadRateLimiter(
-                    cache: $this->cacheManager,
-                    maxUploadsPerMinute: $this->config->getInt('files.rate_limiting.uploads_per_minute', 10),
-                    maxBytesPerHour: $this->config->getInt('files.rate_limiting.bytes_per_hour', 104857600),
-                    maxConcurrentUploads: $this->config->getInt('files.rate_limiting.concurrent_uploads', 3),
-                );
-            });
-        }
-    }
-
-    /**
-     * Register optional services.
-     */
-    private function registerOptionalServices(): void
-    {
-        // Image Processor
-        if ($this->isImageProcessingAvailable()) {
-            $this->singleton(ImageProcessor::class, function () {
-                return new ImageProcessor(
-                    driver: $this->config->getString('files.image.driver', 'gd'),
-                    quality: $this->config->getInt('files.image.quality', 85),
-                );
-            });
-        }
-
-        // CDN URL Generator
-        if ($this->config->getBool('files.cdn.enabled', false)) {
-            $this->singleton(CdnUrlGenerator::class, function () {
-                return new CdnUrlGenerator(
-                    baseUrl: $this->config->getString('files.cdn.url', ''),
-                    signingKey: $this->config->getString('files.cdn.signing_key'),
-                    defaultTtl: $this->config->getInt('files.cdn.default_ttl', 86400),
-                );
-            });
-        }
-
-        // Virus Scanner
-        if ($this->config->getBool('files.security.virus_scan.enabled', false)) {
-            $this->singleton(VirusScannerInterface::class, function () {
-                $driver = $this->config->getString('files.security.virus_scan.driver', 'clamav');
-                
-                return match ($driver) {
-                    'clamav' => new ClamAvScanner(
-                        socketPath: $this->config->getString(
-                            'files.security.virus_scan.clamav_socket',
-                            '/var/run/clamav/clamd.ctl'
-                        ),
-                    ),
-                    'http' => new HttpVirusScanner(
-                        apiUrl: $this->config->getString('files.security.virus_scan.http_endpoint', ''),
-                        apiKey: $this->config->getString('files.security.virus_scan.http_api_key'),
-                    ),
-                    default => throw new \InvalidArgumentException(
-                        "Unknown virus scanner driver: {$driver}"
-                    ),
-                };
-            });
-        }
-
-        // Garbage Collector
-        $this->singleton(GarbageCollector::class, function () {
-            return new GarbageCollector(
-                storage: $this->disk(),
-                repository: $this->config->getBool('files.database.enabled', false)
-                    ? $this->resolve(FileRepository::class)
-                    : null,
-                config: [
-                    'deleted_files_days' => $this->config->getInt('files.garbage_collection.deleted_files_days', 30),
-                    'incomplete_uploads_hours' => $this->config->getInt('files.garbage_collection.incomplete_uploads_hours', 24),
-                    'unused_conversions_days' => $this->config->getInt('files.garbage_collection.unused_conversions_days', 7),
-                ],
-                logger: $this->logger,
-            );
-        });
-    }
-
-    /**
-     * Create a storage driver instance.
-     */
-    private function createStorage(string $diskName): StorageInterface
-    {
-        $diskConfig = $this->config->get("files.disks.{$diskName}");
-        
-        if (!$diskConfig || !is_array($diskConfig)) {
-            throw new \InvalidArgumentException("Unknown disk: {$diskName}");
-        }
-
-        $driver = $diskConfig['driver'] ?? 'local';
-
-        return match ($driver) {
-            'local' => new LocalStorage(
-                basePath: $diskConfig['root'] ?? 'storage/files',
-                baseUrl: $diskConfig['url'] ?? '',
-                directoryPermissions: $diskConfig['permissions']['dir'] ?? 0755,
-                filePermissions: $diskConfig['permissions']['file'] ?? 0644,
-                visibility: $diskConfig['visibility'] ?? 'public',
-            ),
-
-            's3', 'minio', 'spaces', 'r2' => new S3Storage(
-                bucket: $diskConfig['bucket'] ?? '',
-                region: $diskConfig['region'] ?? 'us-east-1',
-                endpoint: $diskConfig['endpoint'] ?? null,
-                accessKey: $diskConfig['key'] ?? null,
-                secretKey: $diskConfig['secret'] ?? null,
-                visibility: $diskConfig['visibility'] ?? 'private',
-                options: $diskConfig,
-            ),
-
-            'gcs', 'google', 'firebase' => new GoogleCloudStorage(
-                bucketName: $diskConfig['bucket'] ?? '',
-                projectId: $diskConfig['project_id'] ?? null,
-                keyFilePath: $diskConfig['key_file_path'] ?? null,
-                keyFile: $diskConfig['key_file'] ?? null,
-                visibility: $diskConfig['visibility'] ?? 'private',
-                pathPrefix: $diskConfig['path_prefix'] ?? null,
-                publicUrl: $diskConfig['url'] ?? null,
-                options: $diskConfig,
-            ),
-
-            default => throw new \InvalidArgumentException(
-                "Unknown storage driver: {$driver}"
-            ),
-        };
-    }
-
-    /**
-     * Resolve configuration from various sources.
-     */
-    private function resolveConfig(Config|array|null $config): Config
-    {
-        if ($config instanceof Config) {
-            return $config;
-        }
-
-        if (is_array($config)) {
-            return new Config($config);
-        }
-
-        // Try to load from MLC file
-        try {
-            $loader = new Loader(
-                parser: new Parser(),
-                baseDir: $this->getConfigPath(),
-            );
-            
-            return $loader->loadOne('files');
-        } catch (\Throwable) {
-            // Fall back to PHP config or default
-            $phpConfigPath = $this->getConfigPath() . '/files.php';
-            
-            if (file_exists($phpConfigPath)) {
-                return new Config(require $phpConfigPath);
-            }
-            
-            return new Config($this->getDefaultConfig());
-        }
-    }
-
-    /**
-     * Resolve cache manager.
-     */
-    private function resolveCacheManager(): CacheManager
-    {
-        // Try to get from container
-        try {
-            if (method_exists($this->container, 'get')) {
-                $manager = $this->container->get(CacheManager::class);
-                if ($manager instanceof CacheManager) {
-                    return $manager;
-                }
-            }
-        } catch (\Throwable) {
-            // Fall through to create new instance
-        }
-
-        // Create a default file-based cache manager
-        return new CacheManager([
-            'default' => 'file',
-            'stores' => [
-                'file' => [
-                    'driver' => 'file',
-                    'path' => sys_get_temp_dir() . '/ml-files-cache',
-                    'prefix' => 'ml_files_',
-                ],
-            ],
-        ]);
-    }
-
-    /**
-     * Resolve database connection.
-     */
-    private function resolveDbConnection(): object
-    {
-        // Try to get from container
-        try {
-            if (method_exists($this->container, 'get')) {
-                return $this->container->get('database');
-            }
-        } catch (\Throwable) {
-            // Fall through
-        }
-
-        // Try ConnectionFactory
-        $dbConfigPath = $this->getConfigPath() . '/database.php';
-        
-        if (file_exists($dbConfigPath)) {
-            $dbConfig = require $dbConfigPath;
-            return ConnectionFactory::create($dbConfig);
-        }
-
-        throw new \RuntimeException(
-            'Database connection not configured. Please provide a connection or configure database.php'
+        return new FilesManager(
+            disks: $drivers,
+            defaultDisk: $defaultDisk,
+            logger: $logger ?? new NullLogger(),
         );
     }
 
     /**
-     * Get the configuration path.
+     * Build a FilesManager from attribute-annotated configuration class.
+     *
+     * @param object          $configInstance Instance of the #[StorageConfig] class
+     * @param LoggerInterface $logger         PSR logger
      */
-    private function getConfigPath(): string
-    {
-        // Try common config paths
-        $paths = [
-            dirname(__DIR__) . '/config',
-            getcwd() . '/config',
-            dirname(__DIR__, 4) . '/config', // Vendor installation
-        ];
+    public static function fromAttributes(
+        object $configInstance,
+        ?LoggerInterface $logger = null,
+    ): FilesManager {
+        $reflection = new \ReflectionClass($configInstance);
+        $attrs      = $reflection->getAttributes(StorageConfig::class);
 
-        foreach ($paths as $path) {
-            if (is_dir($path)) {
-                return $path;
+        if ($attrs === []) {
+            throw new Exception\StorageException(
+                'Configuration class must be annotated with #[StorageConfig]',
+            );
+        }
+
+        /** @var StorageConfig $config */
+        $config      = $attrs[0]->newInstance();
+        $defaultDisk = $config->defaultDisk;
+        $drivers     = [];
+
+        // Scan methods for #[Disk] attributes
+        foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+            $diskAttrs = $method->getAttributes(Disk::class);
+
+            if ($diskAttrs === []) {
+                continue;
+            }
+
+            /** @var Disk $disk */
+            $disk = $diskAttrs[0]->newInstance();
+
+            $methodConfig = $method->invoke($configInstance);
+
+            if ($methodConfig instanceof StorageInterface) {
+                $drivers[$disk->name] = $methodConfig;
+            } elseif (is_array($methodConfig)) {
+                $methodConfig['driver'] = $methodConfig['driver'] ?? $disk->driver;
+                $drivers[$disk->name]   = self::buildDriver($methodConfig);
             }
         }
 
-        return dirname(__DIR__) . '/config';
+        return new FilesManager(
+            disks: $drivers,
+            defaultDisk: $defaultDisk,
+            logger: $logger ?? new NullLogger(),
+        );
     }
 
     /**
-     * Get default configuration.
+     * Build a driver instance from a configuration array.
+     *
+     * @param array<string, mixed> $config
      */
-    private function getDefaultConfig(): array
+    private static function buildDriver(array $config): StorageInterface
     {
-        return [
-            'files' => [
-                'default' => 'local',
-                'disks' => [
-                    'local' => [
-                        'driver' => 'local',
-                        'root' => 'storage/files',
-                        'visibility' => 'private',
-                    ],
-                ],
-                'upload' => [
-                    'max_size' => 20 * 1024 * 1024,
-                    'chunk_size' => 5 * 1024 * 1024,
-                    'chunk_expiry' => 86400,
-                    'temp_dir' => sys_get_temp_dir() . '/ml-uploads',
-                ],
-                'rate_limiting' => [
-                    'enabled' => true,
-                    'uploads_per_minute' => 10,
-                    'bytes_per_hour' => 100 * 1024 * 1024,
-                    'concurrent_uploads' => 3,
-                ],
-                'database' => [
-                    'enabled' => false,
-                ],
-                'cdn' => [
-                    'enabled' => false,
-                ],
-                'security' => [
-                    'virus_scan' => [
-                        'enabled' => false,
-                    ],
-                ],
-            ],
-        ];
-    }
+        $driverName = $config['driver'] ?? 'local';
 
-    /**
-     * Check if image processing extensions are available.
-     */
-    private function isImageProcessingAvailable(): bool
-    {
-        return extension_loaded('gd') || extension_loaded('imagick');
-    }
-
-    /**
-     * Bind a service into the container.
-     */
-    private function bind(string $abstract, callable $concrete): void
-    {
-        try {
-            if (method_exists($this->container, 'set')) {
-                $this->container->set($abstract, $concrete);
-            } elseif (method_exists($this->container, 'bind')) {
-                $this->container->bind($abstract, $concrete);
-            }
-        } catch (\Throwable) {
-            // Container does not support runtime binding — silently skip.
-        }
-    }
-
-    /**
-     * Bind a singleton service into the container.
-     */
-    private function singleton(string $abstract, callable $concrete): void
-    {
-        try {
-            if (method_exists($this->container, 'singleton')) {
-                $this->container->singleton($abstract, $concrete);
-            } elseif (method_exists($this->container, 'share')) {
-                $this->container->share($abstract, $concrete);
-            } elseif (method_exists($this->container, 'set')) {
-                $instance = null;
-                $this->container->set($abstract, function () use ($concrete, &$instance) {
-                    return $instance ??= $concrete();
-                });
-            }
-        } catch (\Throwable) {
-            // Container does not support runtime registration — silently skip.
-        }
-    }
-
-    /**
-     * Resolve a service from the container.
-     */
-    private function resolve(string $abstract): mixed
-    {
-        try {
-            if (method_exists($this->container, 'get')) {
-                return $this->container->get($abstract);
-            }
-            if (method_exists($this->container, 'make')) {
-                return $this->container->make($abstract);
-            }
-        } catch (\Throwable) {
-            return null;
-        }
-
-        return null;
+        return match ($driverName) {
+            'local' => new LocalDriver(
+                basePath: $config['base_path'] ?? $config['root'] ?? '/tmp/storage',
+                baseUrl: $config['base_url'] ?? $config['url'] ?? '',
+                dirPermissions: $config['dir_permissions'] ?? 0o755,
+                filePermissions: $config['file_permissions'] ?? 0o644,
+                defaultVisibility: Visibility::tryFrom($config['visibility'] ?? 'public')
+                    ?? Visibility::Public,
+            ),
+            's3' => new S3Driver(
+                bucket: $config['bucket'] ?? '',
+                region: $config['region'] ?? 'us-east-1',
+                endpoint: $config['endpoint'] ?? null,
+                accessKey: $config['key'] ?? $config['access_key'] ?? null,
+                secretKey: $config['secret'] ?? $config['secret_key'] ?? null,
+                prefix: $config['prefix'] ?? '',
+                defaultVisibility: Visibility::tryFrom($config['visibility'] ?? 'private')
+                    ?? Visibility::Private,
+            ),
+            'gcs' => new GcsDriver(
+                bucket: $config['bucket'] ?? '',
+                keyFilePath: $config['key_file'] ?? $config['key_file_path'] ?? null,
+                projectId: $config['project_id'] ?? null,
+                prefix: $config['prefix'] ?? '',
+                defaultVisibility: Visibility::tryFrom($config['visibility'] ?? 'private')
+                    ?? Visibility::Private,
+            ),
+            'azure' => new AzureBlobDriver(
+                connectionString: $config['connection_string'] ?? '',
+                container: $config['container'] ?? '',
+                prefix: $config['prefix'] ?? '',
+                defaultVisibility: Visibility::tryFrom($config['visibility'] ?? 'private')
+                    ?? Visibility::Private,
+            ),
+            'memory' => new MemoryDriver(
+                defaultVisibility: Visibility::tryFrom($config['visibility'] ?? 'private')
+                    ?? Visibility::Private,
+            ),
+            default => throw new Exception\StorageException("Unknown driver: {$driverName}"),
+        };
     }
 }

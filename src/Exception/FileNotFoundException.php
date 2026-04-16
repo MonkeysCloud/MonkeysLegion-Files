@@ -1,20 +1,27 @@
 <?php
-
 declare(strict_types=1);
 
 namespace MonkeysLegion\Files\Exception;
 
 /**
- * File not found in storage.
+ * MonkeysLegion Framework — Files Package
+ *
+ * Thrown when a requested file does not exist.
+ *
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
  */
-class FileNotFoundException extends StorageException
+final class FileNotFoundException extends FilesException
 {
-    public function __construct(string $path, ?\Throwable $previous = null)
-    {
-        parent::__construct(
-            message: "File not found: {$path}",
-            previous: $previous,
-            context: ['path' => $path]
-        );
+    /** The file path that was not found. */
+    public string $filePath {
+        get => $this->path;
+    }
+
+    public function __construct(
+        private readonly string $path,
+        ?\Throwable $previous = null,
+    ) {
+        parent::__construct("File not found: {$path}", 0, $previous);
     }
 }

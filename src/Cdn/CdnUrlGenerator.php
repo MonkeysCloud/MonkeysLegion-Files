@@ -1,320 +1,119 @@
 <?php
-
 declare(strict_types=1);
 
 namespace MonkeysLegion\Files\Cdn;
 
-use DateTimeInterface;
-use MonkeysLegion\Files\Exception\ConfigurationException;
+use MonkeysLegion\Cache\CacheStoreInterface;
+use MonkeysLegion\Files\Contracts\CloudStorageInterface;
+use MonkeysLegion\Files\Contracts\StorageInterface;
 
 /**
- * CDN URL generator with support for signed URLs.
- * 
- * Generates CDN URLs with optional signatures for CloudFront, BunnyCDN,
- * KeyCDN, and generic HMAC-based signing.
+ * MonkeysLegion Framework — Files Package
+ *
+ * Generates CDN-aware URLs for stored files. Supports custom CDN
+ * domains, signed URLs, and cache-busting via checksums.
+ *
+ * Integrates ML Cache 2.0 for versioned URL caching.
+ *
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
  */
-class CdnUrlGenerator
+final class CdnUrlGenerator
 {
-    private string $baseUrl;
-    private ?string $signingKey;
-    private int $defaultTtl;
-    private string $provider;
-
-    /**
-     * CDN providers.
-     */
-    public const PROVIDER_CLOUDFRONT = 'cloudfront';
-    public const PROVIDER_BUNNY = 'bunny';
-    public const PROVIDER_KEYCDN = 'keycdn';
-    public const PROVIDER_GENERIC = 'generic';
+    /** Default versioned URL cache TTL: 10 minutes. */
+    private const int VERSION_CACHE_TTL = 600;
 
     public function __construct(
-        string $baseUrl,
-        ?string $signingKey = null,
-        int $defaultTtl = 3600,
-        string $provider = self::PROVIDER_GENERIC
-    ) {
-        $this->baseUrl = rtrim($baseUrl, '/');
-        $this->signingKey = $signingKey;
-        $this->defaultTtl = $defaultTtl;
-        $this->provider = $provider;
+        private readonly ?string $cdnBaseUrl = null,
+        private readonly ?CacheStoreInterface $cache = null,
+        private readonly int $versionCacheTtl = self::VERSION_CACHE_TTL,
+    ) {}
+
+    /**
+     * Generate a public URL for a file.
+     *
+     * Falls back to the driver's url() if no CDN is configured.
+     */
+    public function url(StorageInterface $driver, string $path): string
+    {
+        if ($this->cdnBaseUrl !== null) {
+            return rtrim($this->cdnBaseUrl, '/') . '/' . ltrim($path, '/');
+        }
+
+        return $driver->url($path);
     }
 
     /**
-     * Generate a public CDN URL (no signing).
+     * Generate a cache-busted URL using the file checksum.
+     *
+     * Uses ML Cache 2.0 `remember()` to cache the versioned URL,
+     * avoiding repeated checksum computation on hot paths.
      */
-    public function url(string $path): string
+    public function versionedUrl(StorageInterface $driver, string $path): string
     {
-        return $this->baseUrl . '/' . ltrim($path, '/');
+        if ($this->cache !== null) {
+            $safePath = str_replace(['/', '\\', '{', '}', '(', ')', '@', ':'], '_', $path);
+            $cacheKey = 'ml_cdn.versioned.' . $driver->getDriver() . '.' . $safePath;
+
+            return $this->cache->remember(
+                $cacheKey,
+                $this->versionCacheTtl,
+                fn () => $this->buildVersionedUrl($driver, $path),
+            );
+        }
+
+        return $this->buildVersionedUrl($driver, $path);
     }
 
     /**
      * Generate a signed/temporary URL.
+     *
+     * Only works with CloudStorageInterface drivers.
+     *
+     * @param int $ttlSeconds Time-to-live in seconds
      */
     public function signedUrl(
+        StorageInterface $driver,
         string $path,
-        DateTimeInterface|int|null $expiration = null,
-        array $options = []
-    ): string {
-        if ($this->signingKey === null) {
-            throw new ConfigurationException('CDN signing key is not configured');
+        int $ttlSeconds = 3600,
+    ): SignedUrl {
+        $expiresAt = new \DateTimeImmutable("+{$ttlSeconds} seconds");
+
+        if ($driver instanceof CloudStorageInterface) {
+            $url = $driver->temporaryUrl($path, $expiresAt);
+        } else {
+            // For local drivers, just use the public URL (no signing)
+            $url = $this->url($driver, $path);
         }
 
-        $expiration = $this->resolveExpiration($expiration);
-
-        return match ($this->provider) {
-            self::PROVIDER_CLOUDFRONT => $this->signCloudFront($path, $expiration, $options),
-            self::PROVIDER_BUNNY => $this->signBunny($path, $expiration, $options),
-            self::PROVIDER_KEYCDN => $this->signKeyCdn($path, $expiration, $options),
-            default => $this->signGeneric($path, $expiration, $options),
-        };
-    }
-
-    /**
-     * Generate URL with cache-busting query parameter.
-     */
-    public function versionedUrl(string $path, string $version): string
-    {
-        $url = $this->url($path);
-        $separator = str_contains($url, '?') ? '&' : '?';
-        
-        return $url . $separator . 'v=' . urlencode($version);
-    }
-
-    /**
-     * Generate URL with transformation parameters (for image CDNs).
-     */
-    public function transformUrl(string $path, array $transforms): string
-    {
-        $url = $this->url($path);
-        
-        if (empty($transforms)) {
-            return $url;
-        }
-
-        $params = [];
-        
-        foreach ($transforms as $key => $value) {
-            if ($value !== null) {
-                $params[] = $key . '=' . urlencode((string) $value);
-            }
-        }
-        
-        $separator = str_contains($url, '?') ? '&' : '?';
-        
-        return $url . $separator . implode('&', $params);
-    }
-
-    /**
-     * Sign URL using CloudFront-style canned policy.
-     */
-    private function signCloudFront(string $path, int $expiration, array $options): string
-    {
-        $url = $this->url($path);
-        $keyPairId = $options['key_pair_id'] ?? throw new ConfigurationException(
-            'CloudFront requires key_pair_id option'
-        );
-
-        // For CloudFront, signing_key should be the private key path or content
-        $privateKey = $this->signingKey;
-        
-        if (file_exists($privateKey)) {
-            $privateKey = file_get_contents($privateKey);
-        }
-
-        // Create canned policy
-        $policy = json_encode([
-            'Statement' => [[
-                'Resource' => $url,
-                'Condition' => [
-                    'DateLessThan' => [
-                        'AWS:EpochTime' => $expiration,
-                    ],
-                ],
-            ]],
-        ], JSON_UNESCAPED_SLASHES);
-
-        // Sign with RSA-SHA1
-        $signature = '';
-        openssl_sign($policy, $signature, $privateKey, OPENSSL_ALGO_SHA1);
-        
-        // CloudFront-safe base64
-        $signature = strtr(base64_encode($signature), '+/=', '-_~');
-
-        $separator = str_contains($url, '?') ? '&' : '?';
-        
-        return sprintf(
-            '%s%sExpires=%d&Signature=%s&Key-Pair-Id=%s',
-            $url,
-            $separator,
-            $expiration,
-            $signature,
-            $keyPairId
+        return new SignedUrl(
+            url: $url,
+            expiresAt: $expiresAt,
+            path: $path,
+            disk: $driver->getDriver(),
         );
     }
 
     /**
-     * Sign URL using BunnyCDN token authentication.
+     * Invalidate the cached versioned URL for a file.
+     *
+     * Call this after a file is updated to bust the cache.
      */
-    private function signBunny(string $path, int $expiration, array $options): string
+    public function invalidateVersionedUrl(StorageInterface $driver, string $path): void
     {
-        $url = $this->url($path);
-        $parsedUrl = parse_url($url);
-        
-        $signaturePath = $parsedUrl['path'] ?? '/';
-        
-        // Optional: include user IP for additional security
-        $userIp = $options['ip'] ?? null;
-        
-        // Build hash base
-        $hashableBase = $this->signingKey . $signaturePath . $expiration;
-        
-        if ($userIp) {
-            $hashableBase .= $userIp;
-        }
-        
-        // Generate token
-        $token = hash('sha256', $hashableBase);
-        $token = strtr(base64_encode(hex2bin($token)), '+/', '-_');
-        $token = rtrim($token, '=');
-
-        $separator = str_contains($url, '?') ? '&' : '?';
-        $tokenUrl = $url . $separator . 'token=' . $token . '&expires=' . $expiration;
-        
-        if ($userIp) {
-            $tokenUrl .= '&token_path=' . urlencode($signaturePath);
-        }
-        
-        return $tokenUrl;
+        $safePath = str_replace(['/', '\\', '{', '}', '(', ')', '@', ':'], '_', $path);
+        $this->cache?->delete('ml_cdn.versioned.' . $driver->getDriver() . '.' . $safePath);
     }
 
     /**
-     * Sign URL using KeyCDN URL tokens.
+     * Build a versioned URL (uncached).
      */
-    private function signKeyCdn(string $path, int $expiration, array $options): string
+    private function buildVersionedUrl(StorageInterface $driver, string $path): string
     {
-        $url = $this->url($path);
-        $parsedUrl = parse_url($url);
-        
-        $signaturePath = $parsedUrl['path'] ?? '/';
-        
-        // KeyCDN token format
-        $token = md5($this->signingKey . $signaturePath . $expiration);
+        $base  = $this->url($driver, $path);
+        $hash  = $driver->checksum($path, 'md5');
+        $short = $hash !== null ? substr($hash, 0, 8) : (string) time();
 
-        $separator = str_contains($url, '?') ? '&' : '?';
-        
-        return sprintf(
-            '%s%st=%s&e=%d',
-            $url,
-            $separator,
-            $token,
-            $expiration
-        );
-    }
-
-    /**
-     * Sign URL using generic HMAC-SHA256.
-     */
-    private function signGeneric(string $path, int $expiration, array $options): string
-    {
-        $url = $this->url($path);
-        
-        // Build the string to sign
-        $stringToSign = $path . "\n" . $expiration;
-        
-        // Generate HMAC signature
-        $signature = hash_hmac('sha256', $stringToSign, $this->signingKey);
-        
-        // URL-safe base64
-        $signature = rtrim(strtr(base64_encode(hex2bin($signature)), '+/', '-_'), '=');
-
-        $separator = str_contains($url, '?') ? '&' : '?';
-        
-        return sprintf(
-            '%s%sexpires=%d&signature=%s',
-            $url,
-            $separator,
-            $expiration,
-            $signature
-        );
-    }
-
-    /**
-     * Verify a generic signed URL.
-     */
-    public function verifySignature(string $url): bool
-    {
-        if ($this->signingKey === null) {
-            return false;
-        }
-
-        $parsedUrl = parse_url($url);
-        
-        if (!isset($parsedUrl['query'])) {
-            return false;
-        }
-
-        parse_str($parsedUrl['query'], $params);
-        
-        $expires = (int) ($params['expires'] ?? 0);
-        $signature = $params['signature'] ?? '';
-        
-        // Check expiration
-        if ($expires < time()) {
-            return false;
-        }
-        
-        // Rebuild signature
-        $path = $parsedUrl['path'] ?? '/';
-        $stringToSign = $path . "\n" . $expires;
-        $expectedSignature = hash_hmac('sha256', $stringToSign, $this->signingKey);
-        $expectedSignature = rtrim(strtr(base64_encode(hex2bin($expectedSignature)), '+/', '-_'), '=');
-        
-        return hash_equals($expectedSignature, $signature);
-    }
-
-    /**
-     * Resolve expiration to Unix timestamp.
-     */
-    private function resolveExpiration(DateTimeInterface|int|null $expiration): int
-    {
-        if ($expiration === null) {
-            return time() + $this->defaultTtl;
-        }
-
-        if ($expiration instanceof DateTimeInterface) {
-            return $expiration->getTimestamp();
-        }
-
-        // Treat as seconds from now if small, otherwise as timestamp
-        if ($expiration < 1000000000) {
-            return time() + $expiration;
-        }
-
-        return $expiration;
-    }
-
-    /**
-     * Get the base URL.
-     */
-    public function getBaseUrl(): string
-    {
-        return $this->baseUrl;
-    }
-
-    /**
-     * Get the provider.
-     */
-    public function getProvider(): string
-    {
-        return $this->provider;
-    }
-
-    /**
-     * Check if signing is configured.
-     */
-    public function canSign(): bool
-    {
-        return $this->signingKey !== null;
+        return $base . '?v=' . $short;
     }
 }
