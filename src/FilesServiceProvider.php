@@ -6,6 +6,7 @@ namespace MonkeysLegion\Files;
 use MonkeysLegion\Files\Attributes\Disk;
 use MonkeysLegion\Files\Attributes\StorageConfig;
 use MonkeysLegion\Files\Contracts\StorageInterface;
+use MonkeysLegion\Files\Driver\AzureBlobDriver;
 use MonkeysLegion\Files\Driver\GcsDriver;
 use MonkeysLegion\Files\Driver\LocalDriver;
 use MonkeysLegion\Files\Driver\MemoryDriver;
@@ -30,6 +31,7 @@ final class FilesServiceProvider
         'local'  => LocalDriver::class,
         's3'     => S3Driver::class,
         'gcs'    => GcsDriver::class,
+        'azure'  => AzureBlobDriver::class,
         'memory' => MemoryDriver::class,
     ];
 
@@ -142,6 +144,13 @@ final class FilesServiceProvider
                 bucket: $config['bucket'] ?? '',
                 keyFilePath: $config['key_file'] ?? $config['key_file_path'] ?? null,
                 projectId: $config['project_id'] ?? null,
+                prefix: $config['prefix'] ?? '',
+                defaultVisibility: Visibility::tryFrom($config['visibility'] ?? 'private')
+                    ?? Visibility::Private,
+            ),
+            'azure' => new AzureBlobDriver(
+                connectionString: $config['connection_string'] ?? '',
+                container: $config['container'] ?? '',
                 prefix: $config['prefix'] ?? '',
                 defaultVisibility: Visibility::tryFrom($config['visibility'] ?? 'private')
                     ?? Visibility::Private,

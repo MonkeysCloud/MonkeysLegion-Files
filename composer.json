@@ -36,6 +36,7 @@
   "suggest": {
     "aws/aws-sdk-php": "Required for S3-compatible storage (^3.300)",
     "google/cloud-storage": "Required for Google Cloud Storage (^1.35)",
+    "microsoft/azure-storage-blob": "Required for Azure Blob Storage (^1.5)",
     "ext-gd": "Required for image processing with GD",
     "ext-imagick": "Required for advanced image processing with ImageMagick"
   },
