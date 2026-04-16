@@ -48,7 +48,10 @@
   "autoload-dev": {
     "psr-4": {
       "MonkeysLegion\\Files\\Tests\\": "tests/"
-    }
+    },
+    "files": [
+      "stubs/Imagick.php"
+    ]
   },
   "scripts": {
     "test": "phpunit",
