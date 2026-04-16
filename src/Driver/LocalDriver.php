@@ -413,10 +413,18 @@ final class LocalDriver implements StorageInterface
 
         $full = $this->resolvedBase . '/' . $path;
 
+        // Build prefix that correctly handles root (/) base path
+        $basePrefix = rtrim($this->resolvedBase, '/');
+        $basePrefix = ($basePrefix === '') ? '/' : $basePrefix . '/';
+
         // If parent directory exists, verify it's within base
         $parent = realpath(dirname($full));
 
-        if ($parent !== false && !str_starts_with($parent, $this->resolvedBase)) {
+        if (
+            $parent !== false
+            && $parent !== $this->resolvedBase
+            && !str_starts_with($parent, $basePrefix)
+        ) {
             throw new SecurityException("Path traversal detected: {$path}");
         }
 
