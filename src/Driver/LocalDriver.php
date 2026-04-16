@@ -456,9 +456,18 @@ final class LocalDriver implements StorageInterface
         chmod($fullPath, $perms);
     }
 
+    /**
+     * Check if a resolved path is within the base directory.
+     *
+     * Handles the edge case where resolvedBase is root (/) to avoid
+     * generating '//' which would break str_starts_with.
+     */
     private function isWithinBase(string $resolvedPath): bool
     {
+        $basePrefix = rtrim($this->resolvedBase, '/');
+        $basePrefix = ($basePrefix === '') ? '/' : $basePrefix . '/';
+
         return $resolvedPath === $this->resolvedBase
-            || str_starts_with($resolvedPath, $this->resolvedBase . '/');
+            || str_starts_with($resolvedPath, $basePrefix);
     }
 }

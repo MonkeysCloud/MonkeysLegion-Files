@@ -43,13 +43,17 @@ final readonly class PathValidator
         $full = rtrim($basePath, '/') . '/' . $path;
         $normalizedBase = realpath($basePath) ?: rtrim($basePath, '/');
 
+        // Build prefix that correctly handles root (/) base path
+        $basePrefix = rtrim($normalizedBase, '/');
+        $basePrefix = ($basePrefix === '') ? '/' : $basePrefix . '/';
+
         // If parent exists, double-check via realpath
         $parent = realpath(dirname($full));
 
         if (
             $parent !== false
             && $parent !== $normalizedBase
-            && !str_starts_with($parent, $normalizedBase . '/')
+            && !str_starts_with($parent, $basePrefix)
         ) {
             throw new SecurityException("Path traversal detected: {$path}");
         }
