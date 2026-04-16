@@ -330,7 +330,7 @@ final class FilesManager
             return $safeOriginal;
         }
 
-        $ext = strtolower(pathinfo($safeOriginal, PATHINFO_EXTENSION));
+        $ext = pathinfo($safeOriginal, PATHINFO_EXTENSION);
         $id  = bin2hex(random_bytes(16));
 
         return $ext !== '' ? "{$id}.{$ext}" : $id;
