@@ -23,7 +23,7 @@
   "require": {
     "php": "^8.4",
     "monkeyscloud/monkeyslegion-mlc": "^3.1.2",
-    "monkeyscloud/monkeyslegion-cache": "^1.0",
+    "monkeyscloud/monkeyslegion-cache": "^2.0",
     "monkeyscloud/monkeyslegion-database": "^2.0",
     "psr/log": "^3.0"
   },

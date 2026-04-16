@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\Files;
 
+use MonkeysLegion\Cache\CacheInterface;
 use MonkeysLegion\Files\Contracts\StorageInterface;
 use MonkeysLegion\Files\Entity\FileRecord;
 use MonkeysLegion\Files\Exception\FileNotFoundException;
@@ -21,6 +22,7 @@ use Psr\Log\NullLogger;
  * storage, uploads, and cross-disk operations.
  *
  * Uses constructor DI — no setter methods.
+ * Integrates MonkeysLegion Cache 2.0 for metadata caching.
  *
  * @copyright 2026 MonkeysCloud Team
  * @license   MIT
@@ -29,6 +31,12 @@ final class FilesManager
 {
     /** @var array<string, StorageInterface> */
     private array $disks = [];
+
+    /** Default metadata cache TTL: 5 minutes. */
+    private const int CACHE_TTL = 300;
+
+    /** Cache key prefix for files metadata. */
+    private const string CACHE_PREFIX = 'ml_files:';
 
     /**
      * Number of registered disks (computed via get hook).
@@ -57,18 +65,27 @@ final class FilesManager
         get => $this->contentValidator !== null;
     }
 
+    /** Whether caching is enabled. */
+    public bool $isCacheEnabled {
+        get => $this->cache !== null;
+    }
+
     /**
-     * @param array<string, StorageInterface> $disks        Named storage drivers
-     * @param string                          $defaultDisk  Default disk name
-     * @param UploadValidator|null            $validator    Upload validator
-     * @param ContentValidator|null           $contentValidator MIME sniffing validator
-     * @param LoggerInterface                 $logger       PSR logger
+     * @param array<string, StorageInterface> $disks             Named storage drivers
+     * @param string                          $defaultDisk       Default disk name
+     * @param UploadValidator|null            $validator         Upload validator
+     * @param ContentValidator|null           $contentValidator  MIME sniffing validator
+     * @param CacheInterface|null             $cache             MonkeysLegion Cache 2.0
+     * @param int                             $cacheTtl          Metadata cache TTL in seconds
+     * @param LoggerInterface                 $logger            PSR logger
      */
     public function __construct(
         array $disks,
         private readonly string $defaultDisk = 'local',
         private readonly ?UploadValidator $validator = null,
         private readonly ?ContentValidator $contentValidator = null,
+        private readonly ?CacheInterface $cache = null,
+        private readonly int $cacheTtl = self::CACHE_TTL,
         private readonly LoggerInterface $logger = new NullLogger(),
     ) {
         foreach ($disks as $name => $driver) {
@@ -99,16 +116,28 @@ final class FilesManager
 
     // ── File Operations ──────────────────────────────────────────
 
-    /** Store a file from contents. */
+    /** Store a file from contents. Invalidates metadata cache. */
     public function put(string $path, string $contents, ?string $disk = null, array $options = []): bool
     {
-        return $this->disk($disk)->put($path, $contents, $options);
+        $result = $this->disk($disk)->put($path, $contents, $options);
+
+        if ($result) {
+            $this->invalidateCache($path, $disk);
+        }
+
+        return $result;
     }
 
-    /** Store from a stream. */
+    /** Store from a stream. Invalidates metadata cache. */
     public function putStream(string $path, mixed $stream, ?string $disk = null, array $options = []): bool
     {
-        return $this->disk($disk)->putStream($path, $stream, $options);
+        $result = $this->disk($disk)->putStream($path, $stream, $options);
+
+        if ($result) {
+            $this->invalidateCache($path, $disk);
+        }
+
+        return $result;
     }
 
     /** Get file contents. */
@@ -123,10 +152,16 @@ final class FilesManager
         return $this->disk($disk)->getStream($path);
     }
 
-    /** Delete a file. */
+    /** Delete a file. Invalidates metadata cache. */
     public function delete(string $path, ?string $disk = null): bool
     {
-        return $this->disk($disk)->delete($path);
+        $result = $this->disk($disk)->delete($path);
+
+        if ($result) {
+            $this->invalidateCache($path, $disk);
+        }
+
+        return $result;
     }
 
     /** Check if file exists. */
@@ -135,22 +170,39 @@ final class FilesManager
         return $this->disk($disk)->exists($path);
     }
 
-    /** Get file size. */
+    /**
+     * Get file size with caching.
+     *
+     * Uses ML Cache 2.0 `remember()` to avoid repeated I/O.
+     */
     public function size(string $path, ?string $disk = null): ?int
     {
-        return $this->disk($disk)->size($path);
+        return $this->cachedMetadata($path, $disk, 'size', fn () => $this->disk($disk)->size($path));
     }
 
-    /** Get MIME type. */
+    /**
+     * Get MIME type with caching.
+     *
+     * Uses ML Cache 2.0 `remember()` to avoid repeated I/O.
+     */
     public function mimeType(string $path, ?string $disk = null): ?string
     {
-        return $this->disk($disk)->mimeType($path);
+        return $this->cachedMetadata($path, $disk, 'mime', fn () => $this->disk($disk)->mimeType($path));
     }
 
-    /** Get file checksum. */
+    /**
+     * Get file checksum with caching.
+     *
+     * Uses ML Cache 2.0 `remember()` to avoid repeated I/O.
+     */
     public function checksum(string $path, string $algo = 'sha256', ?string $disk = null): ?string
     {
-        return $this->disk($disk)->checksum($path, $algo);
+        return $this->cachedMetadata(
+            $path,
+            $disk,
+            "checksum:{$algo}",
+            fn () => $this->disk($disk)->checksum($path, $algo),
+        );
     }
 
     /** Get public URL. */
@@ -161,16 +213,29 @@ final class FilesManager
 
     // ── Copy / Move (same disk) ──────────────────────────────────
 
-    /** Copy a file within the same disk. */
+    /** Copy a file within the same disk. Invalidates cache for destination. */
     public function copy(string $source, string $destination, ?string $disk = null): bool
     {
-        return $this->disk($disk)->copy($source, $destination);
+        $result = $this->disk($disk)->copy($source, $destination);
+
+        if ($result) {
+            $this->invalidateCache($destination, $disk);
+        }
+
+        return $result;
     }
 
-    /** Move a file within the same disk. */
+    /** Move a file within the same disk. Invalidates cache for both paths. */
     public function move(string $source, string $destination, ?string $disk = null): bool
     {
-        return $this->disk($disk)->move($source, $destination);
+        $result = $this->disk($disk)->move($source, $destination);
+
+        if ($result) {
+            $this->invalidateCache($source, $disk);
+            $this->invalidateCache($destination, $disk);
+        }
+
+        return $result;
     }
 
     // ── Cross-Disk Operations ────────────────────────────────────
@@ -199,12 +264,18 @@ final class FilesManager
         }
 
         try {
-            return $destDriver->putStream($destination, $stream);
+            $result = $destDriver->putStream($destination, $stream);
         } finally {
             if (is_resource($stream)) {
                 fclose($stream);
             }
         }
+
+        if ($result) {
+            $this->invalidateCache($destination, $destDisk);
+        }
+
+        return $result;
     }
 
     /**
@@ -217,7 +288,13 @@ final class FilesManager
         string $destDisk,
     ): bool {
         if ($this->crossDiskCopy($source, $destination, $sourceDisk, $destDisk)) {
-            return $this->disk($sourceDisk)->delete($source);
+            $result = $this->disk($sourceDisk)->delete($source);
+
+            if ($result) {
+                $this->invalidateCache($source, $sourceDisk);
+            }
+
+            return $result;
         }
 
         return false;
@@ -298,6 +375,22 @@ final class FilesManager
         return UploadResult::ok($record);
     }
 
+    // ── Cache Management ────────────────────────────────────────
+
+    /**
+     * Flush all cached file metadata.
+     *
+     * Useful after bulk operations or deployments.
+     */
+    public function flushMetadataCache(): bool
+    {
+        if ($this->cache === null) {
+            return false;
+        }
+
+        return $this->cache->clear();
+    }
+
     // ── Listing ──────────────────────────────────────────────────
 
     /**
@@ -345,5 +438,55 @@ final class FilesManager
         $name = trim($name);
 
         return ($name !== '' && $name !== '.' && $name !== '..') ? $name : 'file';
+    }
+
+    /**
+     * Build a cache key for file metadata.
+     */
+    private function cacheKey(string $path, ?string $disk, string $field): string
+    {
+        $diskName = $disk ?? $this->defaultDisk;
+        return self::CACHE_PREFIX . "{$diskName}:{$path}:{$field}";
+    }
+
+    /**
+     * Retrieve metadata via cache or compute it.
+     *
+     * Uses ML Cache 2.0 `remember()` when available.
+     *
+     * @template T
+     * @param \Closure(): T $compute
+     * @return T
+     */
+    private function cachedMetadata(string $path, ?string $disk, string $field, \Closure $compute): mixed
+    {
+        if ($this->cache === null) {
+            return $compute();
+        }
+
+        $key = $this->cacheKey($path, $disk, $field);
+
+        return $this->cache->remember($key, $this->cacheTtl, $compute);
+    }
+
+    /**
+     * Invalidate all cached metadata for a file path.
+     */
+    private function invalidateCache(string $path, ?string $disk): void
+    {
+        if ($this->cache === null) {
+            return;
+        }
+
+        $diskName = $disk ?? $this->defaultDisk;
+        $prefix   = self::CACHE_PREFIX . "{$diskName}:{$path}:";
+
+        // Delete known metadata keys
+        $this->cache->deleteMultiple([
+            $prefix . 'size',
+            $prefix . 'mime',
+            $prefix . 'checksum:sha256',
+            $prefix . 'checksum:md5',
+        ]);
     }
 }
