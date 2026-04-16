@@ -10,6 +10,7 @@
     "upload",
     "s3",
     "gcs",
+    "azure",
     "image-processing",
     "chunked-upload"
   ],
@@ -70,7 +71,7 @@
   "prefer-stable": true,
   "extra": {
     "branch-alias": {
-      "dev-main": "2.0.x-dev"
+      "dev-main": "2.1.x-dev"
     }
   }
 }
