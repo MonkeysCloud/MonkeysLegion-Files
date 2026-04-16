@@ -263,6 +263,8 @@ final class FilesManager
             throw new FileNotFoundException($source);
         }
 
+        $result = false;
+
         try {
             $result = $destDriver->putStream($destination, $stream);
         } finally {
