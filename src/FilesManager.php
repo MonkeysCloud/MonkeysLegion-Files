@@ -341,7 +341,7 @@ final class FilesManager
         $name = str_replace("\0", '', $name);
         $name = str_replace('\\', '/', $name);
         $name = basename($name);
-        $name = preg_replace('/[\x01-\x1F\x7F]+/u', '', $name) ?? $name;
+        $name = preg_replace('/[\x01-\x1F\x7F]+/', '', $name) ?? $name;
         $name = trim($name);
 
         return ($name !== '' && $name !== '.' && $name !== '..') ? $name : 'file';

@@ -15,9 +15,10 @@ final class PathValidatorTest extends TestCase
     public function testValidateReturnsFullPathForSafeInput(): void
     {
         $base = sys_get_temp_dir() . '/ml_path_' . bin2hex(random_bytes(4));
-        mkdir($base, 0o755, true);
 
         try {
+            $this->assertTrue(mkdir($base, 0o755, true));
+
             $validator = new PathValidator();
             $fullPath = $validator->validate('docs/file.txt', $base);
 

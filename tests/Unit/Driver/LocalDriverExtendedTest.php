@@ -177,6 +177,8 @@ final class LocalDriverExtendedTest extends TestCase
         $publicPerms = fileperms($this->tmpDir . '/perm-public.txt');
         $privatePerms = fileperms($this->tmpDir . '/perm-private.txt');
 
+        $this->assertNotFalse($publicPerms);
+        $this->assertNotFalse($privatePerms);
         $this->assertSame(0o640, $publicPerms & 0o777);
         $this->assertSame(0o600, $privatePerms & 0o777);
     }
