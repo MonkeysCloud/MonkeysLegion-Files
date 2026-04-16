@@ -1,6 +1,6 @@
 {
   "name": "monkeyscloud/monkeyslegion-files",
-  "description": "Production-ready file storage and upload management for the MonkeysLegion framework ecosystem",
+  "description": "Production-ready file storage, upload, and image processing for the MonkeysLegion framework",
   "type": "library",
   "license": "MIT",
   "keywords": [
@@ -21,19 +21,17 @@
   ],
   "require": {
     "php": "^8.4",
-    "monkeyscloud/monkeyslegion-mlc": "^1.0|^2.0",
+    "monkeyscloud/monkeyslegion-mlc": "^3.1.2",
     "monkeyscloud/monkeyslegion-cache": "^1.0",
-    "monkeyscloud/monkeyslegion-database": "^1.0",
+    "monkeyscloud/monkeyslegion-database": "^2.0",
     "psr/log": "^3.0"
   },
   "require-dev": {
     "ext-gd": "*",
     "aws/aws-sdk-php": "^3.300",
-    "friendsofphp/php-cs-fixer": "^3.0",
     "google/cloud-storage": "^1.35",
-    "mockery/mockery": "^1.6",
-    "phpstan/phpstan": "^1.10",
-    "phpunit/phpunit": "^11.0"
+    "phpstan/phpstan": "^2.0",
+    "phpunit/phpunit": "^12.0"
   },
   "suggest": {
     "aws/aws-sdk-php": "Required for S3-compatible storage (^3.300)",
@@ -44,32 +42,27 @@
   "autoload": {
     "psr-4": {
       "MonkeysLegion\\Files\\": "src/"
-    },
-    "files": [
-      "src/helpers.php"
-    ]
+    }
   },
   "autoload-dev": {
     "psr-4": {
       "MonkeysLegion\\Files\\Tests\\": "tests/"
     }
   },
-    "scripts": {
-        "test": "phpunit",
-        "test-coverage": "phpunit --coverage-html coverage",
-        "phpstan": "phpstan analyse src --memory-limit=2G",
-        "quality": [
-            "@phpstan",
-            "@test"
-        ],
-        "cs-fix": "php-cs-fixer fix",
-        "cs-check": "php-cs-fixer fix --dry-run --diff"
-    },
+  "scripts": {
+    "test": "phpunit",
+    "test-coverage": "phpunit --coverage-html coverage",
+    "phpstan": "phpstan analyse src --memory-limit=2G",
+    "quality": [
+      "@phpstan",
+      "@test"
+    ]
+  },
   "config": {
     "sort-packages": true,
     "optimize-autoloader": true
   },
-  "minimum-stability": "stable",
+  "minimum-stability": "dev",
   "prefer-stable": true,
   "extra": {
     "branch-alias": {

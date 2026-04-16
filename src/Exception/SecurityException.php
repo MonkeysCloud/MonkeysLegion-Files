@@ -7,6 +7,6 @@ namespace MonkeysLegion\Files\Exception;
  * @copyright 2026 MonkeysCloud Team
  * @license   MIT
  */
-final class ImageProcessingException extends FilesException
+final class SecurityException extends FilesException
 {
 }

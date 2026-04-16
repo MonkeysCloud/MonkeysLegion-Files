@@ -1,16 +1,18 @@
 <?php
 declare(strict_types=1);
 
-namespace MonkeysLegion\Files\Exception;
+namespace MonkeysLegion\Files;
 
 /**
  * MonkeysLegion Framework — Files Package
  *
- * Base exception for all file-related errors.
+ * File visibility levels.
  *
  * @copyright 2026 MonkeysCloud Team
  * @license   MIT
  */
-class FilesException extends \RuntimeException
+enum Visibility: string
 {
+    case Public  = 'public';
+    case Private = 'private';
 }
